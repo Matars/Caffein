@@ -1,0 +1,34 @@
+{
+    "name": "4dt911-projectvis",
+    "version": "1.0.0",
+    "description": "Full-stack project with Vue.js frontend and Flask backend",
+    "main": "index.js",
+    "packageManager": "pnpm@9.0.0",
+    "scripts": {
+        "setup": "python3 -m venv .venv && .venv/bin/pip install -r requirements.txt && pnpm install",
+        "dev": "concurrently \"pnpm --filter frontend dev\" \"pnpm --filter backend dev\"",
+        "dev:local": "concurrently \"brew services start mongodb-community || echo 'Install MongoDB: brew install mongodb-community'\" \"pnpm dev\"",
+        "build": "pnpm --filter frontend build",
+        "frontend:dev": "pnpm --filter frontend dev",
+        "backend:dev": "pnpm --filter backend dev",
+        "backend:install": ".venv/bin/pip install -r requirements.txt",
+        "mongodb:start": "brew services start mongodb-community",
+        "mongodb:stop": "brew services stop mongodb-community",
+        "python:activate": "source .venv/bin/activate",
+        "docker:up": "docker-compose up -d",
+        "docker:down": "docker-compose down"
+    },
+    "workspaces": [
+        "frontend",
+        "backend"
+    ],
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git@gitlab.lnu.se:km222uq/4dt911-projectvis.git"
+    },
+    "author": "",
+    "license": "ISC"
+}
