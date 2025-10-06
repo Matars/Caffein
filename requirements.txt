@@ -2,3 +2,9 @@ flask==3.0.0
 flask-cors==4.0.0
 pymongo==4.6.0
 python-dotenv==1.0.0
+earthengine-api
+pandas
+numpy>=1.22.4
+matplotlib
+seaborn
+folium
