@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
+import { apiService, type Fire } from '../services/api'
 
 const mapContainer = ref<HTMLDivElement | null>(null)
 const map = ref<maplibregl.Map | null>(null)
@@ -11,6 +12,9 @@ const searchQuery = ref('')
 const searchResults = ref<any[]>([])
 const showResults = ref(false)
 const isSearching = ref(false)
+const fires = ref<Fire[]>([])
+const isLoadingFires = ref(false)
+const fireMarkers = ref<maplibregl.Marker[]>([])
 
 const initMap = () => {
   if (!mapContainer.value) return
@@ -73,6 +77,82 @@ const initMap = () => {
 
   // Add scale control
   map.value.addControl(new maplibregl.ScaleControl(), 'bottom-left')
+
+  // Load fire data after map is initialized
+  map.value.on('load', () => {
+    loadFireData()
+  })
+}
+
+const loadFireData = async () => {
+  if (!map.value) return
+
+  isLoadingFires.value = true
+  try {
+    const response = await apiService.getFires()
+    fires.value = response.data
+    console.log(`Loaded ${fires.value.length} fire records`)
+
+    if (fires.value.length === 0) {
+      console.warn('No fire data available. Run the seed script to populate the database.')
+      alert(
+        'No fire data found. Please run the seed script: python backend/scripts/seed_fire_occurrences.py',
+      )
+    } else {
+      displayFireMarkers()
+    }
+  } catch (error) {
+    console.error('Error loading fire data:', error)
+    alert(`Error loading fire data: ${error}. Please check that the backend is running.`)
+  } finally {
+    isLoadingFires.value = false
+  }
+}
+
+const displayFireMarkers = () => {
+  if (!map.value) return
+
+  // Clear existing markers
+  fireMarkers.value.forEach((marker) => marker.remove())
+  fireMarkers.value = []
+
+  // Add markers for each fire
+  fires.value.forEach((fire) => {
+    if (!fire.Lat_DD || !fire.Long_DD) return
+
+    // Create marker color based on cause
+    const color = fire.HumanOrLightning === 'Lightning' ? '#FFA500' : '#FF0000'
+
+    // Create popup content
+    const popupContent = `
+      <div style="font-family: sans-serif;">
+        <h3 style="margin: 0 0 8px 0; font-size: 14px;">${fire.FireName || 'Unnamed Fire'}</h3>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Year:</strong> ${fire.FireYear}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Acres:</strong> ${fire.EstTotalAcres?.toFixed(2) || 'N/A'}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Cause:</strong> ${fire.HumanOrLightning || 'Unknown'}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>County:</strong> ${fire.County || 'N/A'}</p>
+      </div>
+    `
+
+    // Create marker
+    const marker = new maplibregl.Marker({ color, scale: 0.5 })
+      .setLngLat([fire.Long_DD, fire.Lat_DD])
+      .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(popupContent))
+      .addTo(map.value!)
+
+    fireMarkers.value.push(marker)
+  })
+
+  // Fit map to show all markers
+  if (fires.value.length > 0) {
+    const bounds = new maplibregl.LngLatBounds()
+    fires.value.forEach((fire) => {
+      if (fire.Lat_DD && fire.Long_DD) {
+        bounds.extend([fire.Long_DD, fire.Lat_DD])
+      }
+    })
+    map.value.fitBounds(bounds, { padding: 50, maxZoom: 10 })
+  }
 }
 
 const toggleProjection = () => {
@@ -204,6 +284,17 @@ onBeforeUnmount(() => {
         <span v-if="is3DTerrain">📍 2D View</span>
         <span v-else>⛰️ 3D Terrain</span>
       </button>
+    </div>
+
+    <!-- Loading Indicator -->
+    <div v-if="isLoadingFires" class="loading-indicator">
+      <div class="spinner"></div>
+      <p>Loading fire data...</p>
+    </div>
+
+    <!-- Fire Stats -->
+    <div v-if="fires.length > 0" class="fire-stats">
+      <p>🔥 {{ fires.length.toLocaleString() }} fires loaded</p>
     </div>
   </div>
 </template>
@@ -361,5 +452,59 @@ onBeforeUnmount(() => {
     font-size: 14px;
     padding: 10px 16px;
   }
+}
+
+/* Loading Indicator */
+.loading-indicator {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 24px 32px;
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #ff6b35;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+/* Fire Stats */
+.fire-stats {
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1;
+  font-weight: 600;
+  color: #333;
+}
+
+.fire-stats p {
+  margin: 0;
 }
 </style>

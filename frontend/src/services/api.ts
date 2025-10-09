@@ -12,6 +12,25 @@ export interface HealthResponse {
   database_connected: boolean
 }
 
+export interface Fire {
+  Lat_DD: number
+  Long_DD: number
+  FireName: string
+  FireYear: number
+  EstTotalAcres: number
+  HumanOrLightning: string
+  FireCategory?: string
+  Size_class?: string
+  County?: string
+}
+
+export interface FiresResponse {
+  data: Fire[]
+  count: number
+  status: string
+  error?: string
+}
+
 export const apiService = {
   async getHello(): Promise<ApiResponse> {
     try {
@@ -35,6 +54,19 @@ export const apiService = {
       return await response.json()
     } catch (error) {
       console.error('Error fetching health status:', error)
+      throw error
+    }
+  },
+
+  async getFires(): Promise<FiresResponse> {
+    try {
+      const response = await fetch(`${API_BASE_URL}/fires`)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Error fetching fire data:', error)
       throw error
     }
   },
