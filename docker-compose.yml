@@ -7,9 +7,9 @@ services:
     ports:
       - "27017:27017"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: admin
-      MONGO_INITDB_ROOT_PASSWORD: admin123
-      MONGO_INITDB_DATABASE: projectvis_db
+      MONGO_INITDB_ROOT_USERNAME: matar
+      MONGO_INITDB_ROOT_PASSWORD: CaffeinForLife123
+      MONGO_INITDB_DATABASE: caffein
     volumes:
       - mongodb_data:/data/db
       - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
@@ -27,8 +27,8 @@ services:
       - "5001:5001"
     environment:
       - FLASK_ENV=development
-      - MONGO_URI=mongodb://admin:admin123@mongodb:27017/projectvis_db?authSource=admin
-      - DATABASE_NAME=projectvis_db
+      - MONGO_URI=mongodb+srv://matar:CaffeinForLife123@caffein.re4j8gw.mongodb.net/?retryWrites=true&w=majority&appName=Caffein
+      - DATABASE_NAME=caffein
     depends_on:
       - mongodb
     volumes:
