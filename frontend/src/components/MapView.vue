@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { apiService, type Fire } from '../services/api'
+import { apiService, type FireDetection } from '../services/api'
 
 const mapContainer = ref<HTMLDivElement | null>(null)
 const map = ref<maplibregl.Map | null>(null)
@@ -12,9 +12,13 @@ const searchQuery = ref('')
 const searchResults = ref<any[]>([])
 const showResults = ref(false)
 const isSearching = ref(false)
-const fires = ref<Fire[]>([])
+const fires = ref<FireDetection[]>([])
 const isLoadingFires = ref(false)
 const fireMarkers = ref<maplibregl.Marker[]>([])
+const isDropFireMode = ref(false)
+const droppedFireLocation = ref<{ lng: number; lat: number } | null>(null)
+const droppedFireMarker = ref<maplibregl.Marker | null>(null)
+const isMenuOpen = ref(false)
 
 const initMap = () => {
   if (!mapContainer.value) return
@@ -82,6 +86,9 @@ const initMap = () => {
   map.value.on('load', () => {
     loadFireData()
   })
+
+  // Add click handler for dropping fire starting points
+  map.value.on('click', handleMapClick)
 }
 
 const loadFireData = async () => {
@@ -96,7 +103,7 @@ const loadFireData = async () => {
     if (fires.value.length === 0) {
       console.warn('No fire data available. Run the seed script to populate the database.')
       alert(
-        'No fire data found. Please run the seed script: python backend/scripts/seed_fire_occurrences.py',
+        'No fire data found. Please run the seed script: python backend/scripts/seed_fire_detections.py',
       )
     } else {
       displayFireMarkers()
@@ -116,27 +123,36 @@ const displayFireMarkers = () => {
   fireMarkers.value.forEach((marker) => marker.remove())
   fireMarkers.value = []
 
-  // Add markers for each fire
+  // Add markers for each fire detection
   fires.value.forEach((fire) => {
-    if (!fire.Lat_DD || !fire.Long_DD) return
+    if (!fire.latitude || !fire.longitude) return
 
-    // Create marker color based on cause
-    const color = fire.HumanOrLightning === 'Lightning' ? '#FFA500' : '#FF0000'
+    // Create marker color based on confidence
+    let color = '#FF6B00' // Default orange
+    if (fire.confidence) {
+      const conf = parseInt(fire.confidence)
+      if (conf >= 80) color = '#FF0000' // High confidence - red
+      else if (conf >= 50) color = '#FF6B00' // Medium confidence - orange
+      else color = '#FFAA00' // Low confidence - yellow
+    }
 
-    // Create popup content
+    // Create popup content with FIRMS data
     const popupContent = `
       <div style="font-family: sans-serif;">
-        <h3 style="margin: 0 0 8px 0; font-size: 14px;">${fire.FireName || 'Unnamed Fire'}</h3>
-        <p style="margin: 4px 0; font-size: 12px;"><strong>Year:</strong> ${fire.FireYear}</p>
-        <p style="margin: 4px 0; font-size: 12px;"><strong>Acres:</strong> ${fire.EstTotalAcres?.toFixed(2) || 'N/A'}</p>
-        <p style="margin: 4px 0; font-size: 12px;"><strong>Cause:</strong> ${fire.HumanOrLightning || 'Unknown'}</p>
-        <p style="margin: 4px 0; font-size: 12px;"><strong>County:</strong> ${fire.County || 'N/A'}</p>
+        <h3 style="margin: 0 0 8px 0; font-size: 14px;">🔥 Fire Detection</h3>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Date:</strong> ${fire.acq_date} ${fire.acq_time || ''}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Satellite:</strong> ${fire.satellite || 'N/A'} (${fire.instrument || 'N/A'})</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Confidence:</strong> ${fire.confidence || 'N/A'}%</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>FRP:</strong> ${fire.frp ? fire.frp.toFixed(1) + ' MW' : 'N/A'}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Brightness:</strong> ${fire.brightness ? fire.brightness.toFixed(1) + ' K' : 'N/A'}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Day/Night:</strong> ${fire.daynight === 'D' ? 'Day' : fire.daynight === 'N' ? 'Night' : 'N/A'}</p>
+        <p style="margin: 4px 0; font-size: 11px; color: #666;">Lat: ${fire.latitude.toFixed(4)}, Lon: ${fire.longitude.toFixed(4)}</p>
       </div>
     `
 
     // Create marker
-    const marker = new maplibregl.Marker({ color, scale: 0.5 })
-      .setLngLat([fire.Long_DD, fire.Lat_DD])
+    const marker = new maplibregl.Marker({ color, scale: 0.6 })
+      .setLngLat([fire.longitude, fire.latitude])
       .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(popupContent))
       .addTo(map.value!)
 
@@ -147,8 +163,8 @@ const displayFireMarkers = () => {
   if (fires.value.length > 0) {
     const bounds = new maplibregl.LngLatBounds()
     fires.value.forEach((fire) => {
-      if (fire.Lat_DD && fire.Long_DD) {
-        bounds.extend([fire.Long_DD, fire.Lat_DD])
+      if (fire.latitude && fire.longitude) {
+        bounds.extend([fire.longitude, fire.latitude])
       }
     })
     map.value.fitBounds(bounds, { padding: 50, maxZoom: 10 })
@@ -235,6 +251,81 @@ const handleSearchInput = () => {
   }
 }
 
+const toggleMenu = () => {
+  isMenuOpen.value = !isMenuOpen.value
+}
+
+const toggleDropFireMode = () => {
+  isDropFireMode.value = !isDropFireMode.value
+
+  if (!isDropFireMode.value) {
+    // Remove the dropped fire marker when exiting drop mode
+    if (droppedFireMarker.value) {
+      droppedFireMarker.value.remove()
+      droppedFireMarker.value = null
+    }
+    droppedFireLocation.value = null
+
+    // Reset cursor
+    if (map.value) {
+      map.value.getCanvas().style.cursor = ''
+    }
+  } else {
+    // Change cursor to crosshair when in drop mode
+    if (map.value) {
+      map.value.getCanvas().style.cursor = 'crosshair'
+    }
+  }
+}
+
+const handleMapClick = (e: maplibregl.MapMouseEvent) => {
+  if (!isDropFireMode.value || !map.value) return
+
+  const { lng, lat } = e.lngLat
+
+  // Store the dropped fire location
+  droppedFireLocation.value = { lng, lat }
+
+  // Remove previous marker if it exists
+  if (droppedFireMarker.value) {
+    droppedFireMarker.value.remove()
+  }
+
+  // Create a distinctive marker for the dropped fire starting point
+  const el = document.createElement('div')
+  el.className = 'fire-drop-marker'
+  el.style.width = '30px'
+  el.style.height = '30px'
+  el.style.borderRadius = '50%'
+  el.style.backgroundColor = '#FF4500'
+  el.style.border = '3px solid #FFD700'
+  el.style.boxShadow = '0 0 10px rgba(255, 69, 0, 0.8)'
+  el.style.cursor = 'pointer'
+  el.innerHTML = '🔥'
+  el.style.display = 'flex'
+  el.style.alignItems = 'center'
+  el.style.justifyContent = 'center'
+  el.style.fontSize = '18px'
+
+  // Create popup with coordinates
+  const popupContent = `
+    <div style="font-family: sans-serif; min-width: 200px;">
+      <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #FF4500;">🔥 Fire Starting Point</h3>
+      <p style="margin: 4px 0; font-size: 12px;"><strong>Latitude:</strong> ${lat.toFixed(6)}</p>
+      <p style="margin: 4px 0; font-size: 12px;"><strong>Longitude:</strong> ${lng.toFixed(6)}</p>
+      <p style="margin: 8px 0 4px 0; font-size: 11px; color: #666;">Click again to relocate</p>
+    </div>
+  `
+
+  // Create and add the marker
+  droppedFireMarker.value = new maplibregl.Marker({ element: el })
+    .setLngLat([lng, lat])
+    .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(popupContent))
+    .addTo(map.value)
+
+  console.log('Fire starting point dropped at:', { lng, lat })
+}
+
 onMounted(() => {
   initMap()
 })
@@ -273,16 +364,28 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Toggle Controls -->
-    <div class="toggle-controls">
-      <button @click="toggleProjection" class="toggle-button">
+    <!-- Hamburger Menu Button -->
+    <button @click="toggleMenu" class="hamburger-button" :class="{ open: isMenuOpen }">
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+    </button>
+
+    <!-- Menu Panel -->
+    <div v-if="isMenuOpen" class="menu-panel">
+      <button @click="toggleProjection" class="menu-item">
         <span v-if="isGlobeView">🗺️ Flat Map</span>
         <span v-else>🌍 Globe View</span>
       </button>
 
-      <button @click="toggle3DTerrain" class="toggle-button">
+      <button @click="toggle3DTerrain" class="menu-item">
         <span v-if="is3DTerrain">📍 2D View</span>
         <span v-else>⛰️ 3D Terrain</span>
+      </button>
+
+      <button @click="toggleDropFireMode" :class="['menu-item', { active: isDropFireMode }]">
+        <span v-if="isDropFireMode">✓ Drop Fire Mode</span>
+        <span v-else>🔥 Drop Fire</span>
       </button>
     </div>
 
@@ -392,42 +495,110 @@ onBeforeUnmount(() => {
   background: #f8f8f8;
 }
 
-/* Toggle Controls */
-.toggle-controls {
+/* Hamburger Menu Button */
+.hamburger-button {
   position: absolute;
   bottom: 100px;
   left: 20px;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.toggle-button {
+  z-index: 3;
   background: white;
   border: none;
   border-radius: 8px;
-  padding: 12px 20px;
-  font-size: 16px;
-  font-weight: 500;
+  width: 50px;
+  height: 50px;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   transition: all 0.2s ease;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  white-space: nowrap;
+  justify-content: center;
+  gap: 5px;
+  padding: 0;
 }
 
-.toggle-button:hover {
+.hamburger-button:hover {
   background: #f0f0f0;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   transform: translateY(-1px);
 }
 
-.toggle-button:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+.hamburger-line {
+  width: 24px;
+  height: 3px;
+  background: #333;
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.hamburger-button.open .hamburger-line:nth-child(1) {
+  transform: translateY(8px) rotate(45deg);
+}
+
+.hamburger-button.open .hamburger-line:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger-button.open .hamburger-line:nth-child(3) {
+  transform: translateY(-8px) rotate(-45deg);
+}
+
+/* Menu Panel */
+.menu-panel {
+  position: absolute;
+  bottom: 100px;
+  left: 80px;
+  z-index: 2;
+  background: white;
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+  animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.menu-item {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  text-align: left;
+  color: #333;
+}
+
+.menu-item:hover {
+  background: #f0f0f0;
+}
+
+.menu-item.active {
+  background: #ff6b35;
+  color: white;
+}
+
+.menu-item.active:hover {
+  background: #ff5722;
 }
 
 /* Responsive adjustments */
@@ -437,20 +608,19 @@ onBeforeUnmount(() => {
     max-width: none;
   }
 
-  .toggle-controls {
+  .hamburger-button {
     bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    flex-direction: row;
-    width: calc(100% - 40px);
-    justify-content: center;
+    left: 20px;
   }
 
-  .toggle-button {
-    flex: 1;
-    justify-content: center;
+  .menu-panel {
+    bottom: 20px;
+    left: 80px;
+  }
+
+  .menu-item {
     font-size: 14px;
-    padding: 10px 16px;
+    padding: 10px 14px;
   }
 }
 
