@@ -12,23 +12,31 @@ export interface HealthResponse {
   database_connected: boolean
 }
 
-export interface Fire {
-  Lat_DD: number
-  Long_DD: number
-  FireName: string
-  FireYear: number
-  EstTotalAcres: number
-  HumanOrLightning: string
-  FireCategory?: string
-  Size_class?: string
-  County?: string
+export interface FireDetection {
+  id: number
+  latitude: number
+  longitude: number
+  acq_date: string
+  acq_time?: string
+  confidence?: string
+  frp?: number  // Fire Radiative Power (MW)
+  brightness?: number
+  bright_t31?: number
+  instrument?: string  // MODIS or VIIRS
+  satellite?: string
+  version?: string
+  daynight?: string  // D or N
+  type?: string
+  scan?: number
+  track?: number
 }
 
 export interface FiresResponse {
-  data: Fire[]
+  data: FireDetection[]
   count: number
   status: string
   error?: string
+  message?: string
 }
 
 export const apiService = {

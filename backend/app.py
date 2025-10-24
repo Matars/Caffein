@@ -3,9 +3,9 @@ from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 from db import init_db, get_db, get_connection_status, close_db
+from models import Message, FireDetection
 from logger import get_logger
 import atexit
-import math
 
 # Load environment variables
 load_dotenv()
@@ -16,10 +16,10 @@ logger = get_logger('api')
 app = Flask(__name__)
 CORS(app)
 
-# Initialize MongoDB connection asynchronously (non-blocking)
+# Initialize PostgreSQL connection asynchronously (non-blocking)
 logger.info("Starting Flask server...")
 init_db()
-logger.info("MongoDB connection initializing in background...")
+logger.info("PostgreSQL connection initializing in background...")
 
 # Cleanup on exit
 atexit.register(close_db)
@@ -28,35 +28,40 @@ atexit.register(close_db)
 @app.route('/api/hello', methods=['GET'])
 def hello():
     """Hello world endpoint that returns a message from the database or default"""
-    db = get_db()
+    session = get_db()
     try:
-        if db is not None:
+        if session is not None:
             # Try to get message from database
-            messages_collection = db.messages
-            message_doc = messages_collection.find_one({'type': 'hello'})
+            message_obj = session.query(Message).filter_by(type='hello').first()
 
-            if message_doc:
-                message = message_doc['content']
+            if message_obj:
+                message = message_obj.content
                 logger.debug("Retrieved message from database")
             else:
                 # Insert default message if not exists
-                default_message = {
-                    'type': 'hello',
-                    'content': 'Hello World from Flask backend with MongoDB!'
-                }
-                messages_collection.insert_one(default_message)
-                message = default_message['content']
+                default_message = Message(
+                    type='hello',
+                    content='Hello World from Flask backend with PostgreSQL!'
+                )
+                session.add(default_message)
+                session.commit()
+                message = default_message.content
                 logger.info("Inserted default message into database")
+
+            session.close()
         else:
-            message = 'Hello World from Flask backend (MongoDB not connected)'
+            message = 'Hello World from Flask backend (PostgreSQL not connected)'
             logger.warning("Database not connected, using default message")
 
         return jsonify({
             'message': message,
             'status': 'success',
-            'database_connected': db is not None
+            'database_connected': session is not None
         })
     except Exception as e:
+        if session:
+            session.rollback()
+            session.close()
         logger.error(f"Error in /api/hello endpoint: {str(e)}")
         return jsonify({
             'message': 'Hello World from Flask backend (error occurred)',
@@ -82,69 +87,47 @@ def health():
 
 @app.route('/api/fires', methods=['GET'])
 def get_fires():
-    """Get fire occurrences with coordinates for mapping"""
+    """Get NASA FIRMS fire detections with coordinates for mapping"""
+    session = get_db()
     try:
-        db = get_db()
-        if db is None:
+        if session is None:
             logger.warning("Database not connected")
             return jsonify({
                 'error': 'Database not connected',
                 'status': 'error'
             }), 503
 
-        # Query fires with only necessary fields for mapping
-        fires = list(db.fire_occurrences.find(
-            {},
-            {
-                '_id': 0,
-                'Lat_DD': 1,
-                'Long_DD': 1,
-                'FireName': 1,
-                'FireYear': 1,
-                'EstTotalAcres': 1,
-                'HumanOrLightning': 1,
-                'FireCategory': 1,
-                'Size_class': 1,
-                'County': 1
-            }
-        ).limit(100))  # Limit to 1k records for performance
+        # Query fire detections - limit to 1000 records for performance
+        fires_query = session.query(FireDetection).limit(1000).all()
 
-        # Check if collection is empty
-        if len(fires) == 0:
+        # Check if table is empty
+        if len(fires_query) == 0:
+            session.close()
             logger.warning(
-                "No fire records found in database. Run seed script first.")
+                "No fire detection records found in database. Run seeding script first.")
             return jsonify({
                 'data': [],
                 'count': 0,
                 'status': 'success',
-                'message': 'No data found. Please run the seed script to populate the database.'
+                'message': 'No data found. Please run: python scripts/seed_fire_detections.py'
             })
 
-        # Clean the data - remove NaN, Infinity, and None values
+        # Convert to dict and validate coordinates
         cleaned_fires = []
-        for fire in fires:
-            # Check if coordinates are valid numbers
-            lat = fire.get('Lat_DD')
-            lon = fire.get('Long_DD')
+        for fire in fires_query:
+            fire_dict = fire.to_dict()
 
-            # Skip fires with invalid coordinates
-            if lat is None or lon is None:
-                continue
-            if isinstance(lat, float) and (math.isnan(lat) or math.isinf(lat)):
-                continue
-            if isinstance(lon, float) and (math.isnan(lon) or math.isinf(lon)):
+            # Validate coordinates exist
+            if fire_dict['latitude'] is None or fire_dict['longitude'] is None:
                 continue
 
-            # Clean other numeric fields
-            acres = fire.get('EstTotalAcres')
-            if isinstance(acres, float) and (math.isnan(acres) or math.isinf(acres)):
-                fire['EstTotalAcres'] = 0
+            cleaned_fires.append(fire_dict)
 
-            cleaned_fires.append(fire)
+        session.close()
 
         logger.info(
-            f"Retrieved {len(cleaned_fires)} valid fire records "
-            f"(filtered from {len(fires)})"
+            f"Retrieved {len(cleaned_fires)} valid fire detection records "
+            f"(filtered from {len(fires_query)})"
         )
 
         return jsonify({
@@ -154,7 +137,9 @@ def get_fires():
         })
 
     except Exception as e:
-        logger.error(f"Error fetching fires: {str(e)}")
+        if session:
+            session.close()
+        logger.error(f"Error fetching fire detections: {str(e)}")
         return jsonify({
             'error': str(e),
             'status': 'error'

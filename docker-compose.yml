@@ -1,20 +1,25 @@
 services:
-  # MongoDB Database
-  mongodb:
-    image: mongo:7.0
-    container_name: projectvis-mongodb
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: projectvis-postgres
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "5432:5432"
     environment:
-      MONGO_INITDB_ROOT_USERNAME: matar
-      MONGO_INITDB_ROOT_PASSWORD: CaffeinForLife123
-      MONGO_INITDB_DATABASE: caffein
+      - POSTGRES_DB=caffein
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
     volumes:
-      - mongodb_data:/data/db
-      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+      - postgres-data:/var/lib/postgresql/data
+      - ./backend/schema.sql:/docker-entrypoint-initdb.d/schema.sql
     networks:
       - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # Flask Backend
   backend:
@@ -27,12 +32,17 @@ services:
       - "5001:5001"
     environment:
       - FLASK_ENV=development
-      - MONGO_URI=mongodb+srv://matar:CaffeinForLife123@caffein.re4j8gw.mongodb.net/?retryWrites=true&w=majority&appName=Caffein
-      - DATABASE_NAME=caffein
-    depends_on:
-      - mongodb
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=caffein
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
     volumes:
       - ./backend:/app
+      - ./data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - app-network
 
@@ -56,7 +66,7 @@ services:
       - app-network
 
 volumes:
-  mongodb_data:
+  postgres-data:
 
 networks:
   app-network:
