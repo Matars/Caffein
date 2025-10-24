@@ -13,15 +13,26 @@ import argparse
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from config.sweden import SWEDEN_BOUNDS, DATA_PATHS
 
-def initialize_earth_engine():
+def initialize_earth_engine(project=None):
     """Initialize Google Earth Engine"""
     try:
-        ee.Initialize()
+        if project:
+            ee.Initialize(project=project)
+        else:
+            # Try to initialize with default credentials
+            try:
+                ee.Initialize()
+            except Exception:
+                # If that fails, try with opt_url (for newer API versions)
+                ee.Initialize(opt_url='https://earthengine.googleapis.com')
         print("✓ Earth Engine initialized successfully")
         return True
     except Exception as e:
         print(f"❌ Earth Engine initialization failed: {e}")
-        print("\nPlease run: earthengine authenticate")
+        print("\nPlease:")
+        print("1. Run: earthengine authenticate")
+        print("2. Create a Google Cloud project at: https://console.cloud.google.com")
+        print("3. Run this script with: --project YOUR_PROJECT_ID")
         return False
 
 def get_sweden_geometry():
@@ -203,6 +214,8 @@ def main():
     parser.add_argument('--output', type=str,
                        default=DATA_PATHS['sentinel5p_sweden'],
                        help='Output directory')
+    parser.add_argument('--project', type=str,
+                       help='Google Cloud project ID')
 
     args = parser.parse_args()
 
@@ -215,7 +228,7 @@ def main():
         sys.exit(1)
 
     # Initialize Earth Engine
-    if not initialize_earth_engine():
+    if not initialize_earth_engine(args.project):
         sys.exit(1)
 
     # Download data
@@ -228,18 +241,20 @@ if __name__ == "__main__":
         print("Sentinel-5P NO2 Data Downloader for Sweden")
         print("=" * 70)
         print("\nUsage:")
-        print("  python download_sentinel5p_sweden.py --start 2024-07-01 --end 2024-07-31")
+        print("  python download_sentinel5p_sweden.py --start 2024-07-01 --end 2024-07-31 --project YOUR_PROJECT_ID")
         print("\nOptions:")
         print("  --start    Start date (YYYY-MM-DD) [required]")
         print("  --end      End date (YYYY-MM-DD) [required]")
+        print("  --project  Google Cloud project ID [required for newer API]")
         print("  --output   Output directory [optional]")
         print("\nExample:")
         print("  # Download July 2024 data")
-        print("  python download_sentinel5p_sweden.py --start 2024-07-01 --end 2024-07-31")
+        print("  python download_sentinel5p_sweden.py --start 2024-07-01 --end 2024-07-31 --project my-project-123")
         print("\nBefore running:")
         print("  1. Install: pip install earthengine-api")
         print("  2. Authenticate: earthengine authenticate")
-        print("  3. Run this script")
+        print("  3. Create project: https://console.cloud.google.com")
+        print("  4. Run this script with --project YOUR_PROJECT_ID")
         print("=" * 70)
     else:
         main()
