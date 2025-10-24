@@ -39,6 +39,26 @@ export interface FiresResponse {
   message?: string
 }
 
+export interface NO2Measurement {
+  id: number
+  latitude: number
+  longitude: number
+  measurement_date: string
+  no2_column?: number  // Tropospheric NO2 column density (molecules/cm²)
+  qa_value?: number    // Quality assurance (0-1)
+  cloud_fraction?: number  // Cloud fraction (0-1)
+  grid_lat_idx?: number
+  grid_lon_idx?: number
+}
+
+export interface NO2Response {
+  data: NO2Measurement[]
+  count: number
+  status: string
+  error?: string
+  message?: string
+}
+
 export const apiService = {
   async getHello(): Promise<ApiResponse> {
     try {
@@ -75,6 +95,26 @@ export const apiService = {
       return await response.json()
     } catch (error) {
       console.error('Error fetching fire data:', error)
+      throw error
+    }
+  },
+
+  async getNO2(params?: { limit?: number; date_from?: string; date_to?: string; min_qa?: number }): Promise<NO2Response> {
+    try {
+      const queryParams = new URLSearchParams()
+      if (params?.limit) queryParams.append('limit', params.limit.toString())
+      if (params?.date_from) queryParams.append('date_from', params.date_from)
+      if (params?.date_to) queryParams.append('date_to', params.date_to)
+      if (params?.min_qa) queryParams.append('min_qa', params.min_qa.toString())
+
+      const url = `${API_BASE_URL}/no2${queryParams.toString() ? '?' + queryParams.toString() : ''}`
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Error fetching NO2 data:', error)
       throw error
     }
   },

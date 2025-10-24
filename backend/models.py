@@ -65,3 +65,32 @@ class FireDetection(Base):
             'scan': float(self.scan) if self.scan is not None else None,
             'track': float(self.track) if self.track is not None else None
         }
+
+
+class NO2MeasurementSweden(Base):
+    """Sentinel-5P NO2 measurements for Sweden"""
+    __tablename__ = 'no2_measurements_sweden'
+
+    id = Column(Integer, primary_key=True)
+    latitude = Column(Numeric(10, 6), nullable=False)
+    longitude = Column(Numeric(11, 6), nullable=False)
+    measurement_date = Column(DATE, nullable=False)
+    no2_column = Column(Numeric(15, 6))  # Tropospheric NO2 column density (molecules/cm²)
+    qa_value = Column(Numeric(5, 3))  # Quality assurance (0-1)
+    cloud_fraction = Column(Numeric(5, 3))  # Cloud fraction (0-1)
+    grid_lat_idx = Column(Integer)
+    grid_lon_idx = Column(Integer)
+    created_at = Column(TIMESTAMP, server_default=func.current_timestamp())
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'latitude': float(self.latitude) if self.latitude is not None else None,
+            'longitude': float(self.longitude) if self.longitude is not None else None,
+            'measurement_date': self.measurement_date.isoformat() if self.measurement_date else None,
+            'no2_column': float(self.no2_column) if self.no2_column is not None else None,
+            'qa_value': float(self.qa_value) if self.qa_value is not None else None,
+            'cloud_fraction': float(self.cloud_fraction) if self.cloud_fraction is not None else None,
+            'grid_lat_idx': self.grid_lat_idx,
+            'grid_lon_idx': self.grid_lon_idx
+        }
