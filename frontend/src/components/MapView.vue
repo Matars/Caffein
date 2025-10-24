@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { apiService, type FireDetection } from '../services/api'
+import { apiService, type FireDetection, type NO2Measurement } from '../services/api'
 
 const mapContainer = ref<HTMLDivElement | null>(null)
 const map = ref<maplibregl.Map | null>(null)
@@ -19,6 +19,11 @@ const isDropFireMode = ref(false)
 const droppedFireLocation = ref<{ lng: number; lat: number } | null>(null)
 const droppedFireMarker = ref<maplibregl.Marker | null>(null)
 const isMenuOpen = ref(false)
+const no2Measurements = ref<NO2Measurement[]>([])
+const isLoadingNO2 = ref(false)
+const no2Markers = ref<maplibregl.Marker[]>([])
+const showNO2Layer = ref(false)
+const showFireLayer = ref(true)
 
 const initMap = () => {
   if (!mapContainer.value) return
@@ -123,6 +128,8 @@ const displayFireMarkers = () => {
   fireMarkers.value.forEach((marker) => marker.remove())
   fireMarkers.value = []
 
+  if (!showFireLayer.value) return
+
   // Add markers for each fire detection
   fires.value.forEach((fire) => {
     if (!fire.latitude || !fire.longitude) return
@@ -168,6 +175,89 @@ const displayFireMarkers = () => {
       }
     })
     map.value.fitBounds(bounds, { padding: 50, maxZoom: 10 })
+  }
+}
+
+const loadNO2Data = async () => {
+  if (!map.value) return
+
+  isLoadingNO2.value = true
+  try {
+    const response = await apiService.getNO2({ limit: 100000, min_qa: 0.5 })
+    no2Measurements.value = response.data
+    console.log(`Loaded ${no2Measurements.value.length} NO2 measurement records`)
+
+    if (no2Measurements.value.length === 0) {
+      console.warn('No NO2 data available. Run the seed script to populate the database.')
+    } else if (showNO2Layer.value) {
+      displayNO2Markers()
+    }
+  } catch (error) {
+    console.error('Error loading NO2 data:', error)
+  } finally {
+    isLoadingNO2.value = false
+  }
+}
+
+const displayNO2Markers = () => {
+  if (!map.value) return
+
+  // Clear existing NO2 markers
+  no2Markers.value.forEach((marker) => marker.remove())
+  no2Markers.value = []
+
+  if (!showNO2Layer.value) return
+
+  // Add markers for each NO2 measurement
+  no2Measurements.value.forEach((measurement) => {
+    if (!measurement.latitude || !measurement.longitude || !measurement.no2_column) return
+
+    // Color code based on NO2 concentration levels (molecules/cm²)
+    // Typical tropospheric NO2: 1e14 - 1e16 molecules/cm²
+    const no2Value = measurement.no2_column
+    let color = '#00FF00' // Green - low
+
+    if (no2Value > 1e16) color = '#8B0000' // Dark red - very high
+    else if (no2Value > 5e15) color = '#FF0000' // Red - high
+    else if (no2Value > 2e15) color = '#FF6B00' // Orange - moderate-high
+    else if (no2Value > 1e15) color = '#FFAA00' // Yellow - moderate
+    else if (no2Value > 5e14) color = '#90EE90' // Light green - low-moderate
+
+    // Create popup content with NO2 data
+    const popupContent = `
+      <div style="font-family: sans-serif;">
+        <h3 style="margin: 0 0 8px 0; font-size: 14px;">🌫️ NO2 Measurement</h3>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Date:</strong> ${measurement.measurement_date}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>NO2 Column:</strong> ${(no2Value).toExponential(2)} mol/cm²</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Quality:</strong> ${measurement.qa_value ? (measurement.qa_value * 100).toFixed(1) + '%' : 'N/A'}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Cloud Fraction:</strong> ${measurement.cloud_fraction ? (measurement.cloud_fraction * 100).toFixed(1) + '%' : 'N/A'}</p>
+        <p style="margin: 4px 0; font-size: 11px; color: #666;">Lat: ${measurement.latitude.toFixed(4)}, Lon: ${measurement.longitude.toFixed(4)}</p>
+      </div>
+    `
+
+    // Create marker
+    const marker = new maplibregl.Marker({ color, scale: 0.5 })
+      .setLngLat([measurement.longitude, measurement.latitude])
+      .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(popupContent))
+      .addTo(map.value!)
+
+    no2Markers.value.push(marker)
+  })
+}
+
+const toggleFireLayer = () => {
+  showFireLayer.value = !showFireLayer.value
+  displayFireMarkers()
+}
+
+const toggleNO2Layer = () => {
+  showNO2Layer.value = !showNO2Layer.value
+
+  if (showNO2Layer.value && no2Measurements.value.length === 0) {
+    // Load NO2 data if not already loaded
+    loadNO2Data()
+  } else {
+    displayNO2Markers()
   }
 }
 
@@ -383,6 +473,16 @@ onBeforeUnmount(() => {
         <span v-else>⛰️ 3D Terrain</span>
       </button>
 
+      <button @click="toggleFireLayer" :class="['menu-item', { active: showFireLayer }]">
+        <span v-if="showFireLayer">🔥 Hide Fires</span>
+        <span v-else>🔥 Show Fires</span>
+      </button>
+
+      <button @click="toggleNO2Layer" :class="['menu-item', { active: showNO2Layer }]">
+        <span v-if="showNO2Layer">🌫️ Hide NO2</span>
+        <span v-else>🌫️ Show NO2</span>
+      </button>
+
       <button @click="toggleDropFireMode" :class="['menu-item', { active: isDropFireMode }]">
         <span v-if="isDropFireMode">✓ Drop Fire Mode</span>
         <span v-else>🔥 Drop Fire</span>
@@ -390,14 +490,18 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Loading Indicator -->
-    <div v-if="isLoadingFires" class="loading-indicator">
+    <div v-if="isLoadingFires || isLoadingNO2" class="loading-indicator">
       <div class="spinner"></div>
-      <p>Loading fire data...</p>
+      <p v-if="isLoadingFires">Loading fire data...</p>
+      <p v-if="isLoadingNO2">Loading NO2 data...</p>
     </div>
 
-    <!-- Fire Stats -->
-    <div v-if="fires.length > 0" class="fire-stats">
-      <p>🔥 {{ fires.length.toLocaleString() }} fires loaded</p>
+    <!-- Data Stats -->
+    <div v-if="fires.length > 0 || no2Measurements.length > 0" class="data-stats">
+      <p v-if="fires.length > 0 && showFireLayer">🔥 {{ fires.length.toLocaleString() }} fires</p>
+      <p v-if="no2Measurements.length > 0 && showNO2Layer">
+        🌫️ {{ no2Measurements.length.toLocaleString() }} NO2 measurements
+      </p>
     </div>
   </div>
 </template>
@@ -659,14 +763,13 @@ onBeforeUnmount(() => {
   }
 }
 
-/* Fire Stats */
-.fire-stats {
+/* Data Stats */
+.data-stats {
   position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 80px;
+  left: 20px;
   background: white;
-  padding: 12px 24px;
+  padding: 12px 20px;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   z-index: 1;
@@ -674,7 +777,8 @@ onBeforeUnmount(() => {
   color: #333;
 }
 
-.fire-stats p {
-  margin: 0;
+.data-stats p {
+  margin: 4px 0;
+  font-size: 14px;
 }
 </style>

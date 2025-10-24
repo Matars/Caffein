@@ -1,9 +1,9 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 from db import init_db, get_db, get_connection_status, close_db
-from models import Message, FireDetection
+from models import Message, FireDetection, NO2MeasurementSweden
 from logger import get_logger
 import atexit
 
@@ -97,8 +97,8 @@ def get_fires():
                 'status': 'error'
             }), 503
 
-        # Query fire detections - limit to 1000 records for performance
-        fires_query = session.query(FireDetection).limit(1000).all()
+        # Query fire detections - limit to 10000 records
+        fires_query = session.query(FireDetection).limit(10000).all()
 
         # Check if table is empty
         if len(fires_query) == 0:
@@ -140,6 +140,87 @@ def get_fires():
         if session:
             session.close()
         logger.error(f"Error fetching fire detections: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
+
+
+@app.route('/api/no2', methods=['GET'])
+def get_no2_measurements():
+    """Get Sentinel-5P NO2 pollution measurements for Sweden"""
+    session = get_db()
+    try:
+        if session is None:
+            logger.warning("Database not connected")
+            return jsonify({
+                'error': 'Database not connected',
+                'status': 'error'
+            }), 503
+
+        # Optional query parameters for filtering
+        limit = request.args.get('limit', 10000, type=int)
+        date_from = request.args.get('date_from')  # YYYY-MM-DD
+        date_to = request.args.get('date_to')  # YYYY-MM-DD
+        min_qa = request.args.get('min_qa', 0.5, type=float)  # Minimum quality
+
+        # Build query
+        query = session.query(NO2MeasurementSweden)
+
+        # Apply filters
+        if date_from:
+            query = query.filter(NO2MeasurementSweden.measurement_date >= date_from)
+        if date_to:
+            query = query.filter(NO2MeasurementSweden.measurement_date <= date_to)
+        if min_qa:
+            query = query.filter(NO2MeasurementSweden.qa_value >= min_qa)
+
+        # Order by date (most recent first) and apply limit
+        query = query.order_by(NO2MeasurementSweden.measurement_date.desc()).limit(limit)
+
+        measurements = query.all()
+
+        # Check if table is empty
+        if len(measurements) == 0:
+            session.close()
+            logger.warning("No NO2 measurement records found in database")
+            return jsonify({
+                'data': [],
+                'count': 0,
+                'status': 'success',
+                'message': 'No data found. Please run: python scripts/seed_no2_data.py'
+            })
+
+        # Convert to dict and validate
+        cleaned_measurements = []
+        for measurement in measurements:
+            measurement_dict = measurement.to_dict()
+
+            # Validate coordinates and NO2 value exist
+            if (measurement_dict['latitude'] is None or
+                measurement_dict['longitude'] is None or
+                measurement_dict['no2_column'] is None):
+                continue
+
+            cleaned_measurements.append(measurement_dict)
+
+        session.close()
+
+        logger.info(
+            f"Retrieved {len(cleaned_measurements)} valid NO2 measurement records "
+            f"(filtered from {len(measurements)})"
+        )
+
+        return jsonify({
+            'data': cleaned_measurements,
+            'count': len(cleaned_measurements),
+            'status': 'success'
+        })
+
+    except Exception as e:
+        if session:
+            session.close()
+        logger.error(f"Error fetching NO2 measurements: {str(e)}")
         return jsonify({
             'error': str(e),
             'status': 'error'
