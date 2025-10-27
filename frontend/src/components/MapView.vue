@@ -15,6 +15,10 @@ const isSearching = ref(false)
 const fires = ref<FireDetection[]>([])
 const isLoadingFires = ref(false)
 const fireMarkers = ref<maplibregl.Marker[]>([])
+const months = ref<string[]>([])
+const selectedMonthIndex = ref<number | null>(null)
+const minDate = ref<string | null>(null)
+const maxDate = ref<string | null>(null)
 const isDropFireMode = ref(false)
 const droppedFireLocation = ref<{ lng: number; lat: number } | null>(null)
 const droppedFireMarker = ref<maplibregl.Marker | null>(null)
@@ -88,8 +92,25 @@ const initMap = () => {
   map.value.addControl(new maplibregl.ScaleControl(), 'bottom-left')
 
   // Load fire data after map is initialized
-  map.value.on('load', () => {
-    loadFireData()
+  map.value.on('load', async () => {
+    // fetch available date range and build month slider
+    try {
+      const range = await apiService.getFiresRange()
+      if (range && range.min_date && range.max_date) {
+        minDate.value = range.min_date
+        maxDate.value = range.max_date
+        buildMonths(range.min_date, range.max_date)
+        // default to latest month
+        selectedMonthIndex.value = months.value.length - 1
+        await loadFireDataForSelectedMonth()
+      } else {
+        // fallback to loading default small sample
+        await loadFireData()
+      }
+    } catch (err) {
+      console.warn('Could not fetch fires range, loading default data', err)
+      await loadFireData()
+    }
   })
 
   // Add click handler for dropping fire starting points
@@ -177,6 +198,84 @@ const displayFireMarkers = () => {
       }
     })
     map.value.fitBounds(bounds, { padding: 50, maxZoom: 10 })
+  }
+}
+
+// Build months array (YYYY-MM) between min and max inclusive
+const buildMonths = (minDateStr: string, maxDateStr: string) => {
+  const start = new Date(minDateStr)
+  const end = new Date(maxDateStr)
+  start.setDate(1)
+  end.setDate(1)
+  const list: string[] = []
+  const cur = new Date(start)
+  while (cur <= end) {
+    const y = cur.getFullYear()
+    const m = cur.getMonth() + 1
+    const mm = m < 10 ? `0${m}` : `${m}`
+    list.push(`${y}-${mm}`)
+    cur.setMonth(cur.getMonth() + 1)
+  }
+  months.value = list
+}
+
+const formatMonthLabel = (ym: string) => {
+  const [y, m] = ym.split('-')
+  const monthNames = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ]
+  return `${monthNames[parseInt(m, 10) - 1]} ${y}`
+}
+
+const loadFireDataForSelectedMonth = async () => {
+  if (selectedMonthIndex.value === null || !months.value.length) {
+    return await loadFireData()
+  }
+
+  const ym = months.value[selectedMonthIndex.value]
+  const [y, m] = ym.split('-').map((v) => parseInt(v, 10))
+  const date_from = `${y}-${m < 10 ? '0' + m : m}-01`
+  // last day of month
+  const lastDay = new Date(y, m, 0).getDate()
+  const date_to = `${y}-${m < 10 ? '0' + m : m}-${lastDay < 10 ? '0' + lastDay : lastDay}`
+
+  isLoadingFires.value = true
+  try {
+    const response = await apiService.getFires({ limit: 1000, date_from, date_to })
+    fires.value = response.data
+    console.log(`Loaded ${fires.value.length} fire records for ${ym}`)
+    displayFireMarkers()
+  } catch (err) {
+    console.error('Error loading filtered fire data:', err)
+  } finally {
+    isLoadingFires.value = false
+  }
+}
+
+const prevMonth = async () => {
+  if (selectedMonthIndex.value === null) return
+  if (selectedMonthIndex.value > 0) {
+    selectedMonthIndex.value--
+    await loadFireDataForSelectedMonth()
+  }
+}
+
+const nextMonth = async () => {
+  if (selectedMonthIndex.value === null) return
+  if (selectedMonthIndex.value < months.value.length - 1) {
+    selectedMonthIndex.value++
+    await loadFireDataForSelectedMonth()
   }
 }
 
@@ -509,6 +608,29 @@ onBeforeUnmount(() => {
         🌫️ {{ no2Measurements.length.toLocaleString() }} NO2 measurements
       </p>
     </div>
+
+    <!-- Month timeline slider -->
+    <div v-if="months.length" class="timeline-slider">
+      <button class="tl-btn" @click="prevMonth">◀</button>
+      <div class="tl-track">
+        <input
+          type="range"
+          :min="0"
+          :max="months.length - 1"
+          v-model.number="selectedMonthIndex"
+          @input="loadFireDataForSelectedMonth"
+          class="tl-range"
+        />
+        <div class="tl-labels">
+          <span class="tl-label-left">{{ formatMonthLabel(months[0]) }}</span>
+          <span class="tl-label-center">{{
+            selectedMonthIndex !== null ? formatMonthLabel(months[selectedMonthIndex]) : ''
+          }}</span>
+          <span class="tl-label-right">{{ formatMonthLabel(months[months.length - 1]) }}</span>
+        </div>
+      </div>
+      <button class="tl-btn" @click="nextMonth">▶</button>
+    </div>
   </div>
 </template>
 
@@ -767,6 +889,53 @@ onBeforeUnmount(() => {
   100% {
     transform: rotate(360deg);
   }
+}
+
+/* Timeline slider */
+.timeline-slider {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  z-index: 3;
+  width: 80%;
+  max-width: 1000px;
+}
+.tl-btn {
+  background: white;
+  border: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  font-size: 18px;
+}
+.tl-track {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 12px 16px;
+  border-radius: 999px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tl-range {
+  width: 100%;
+}
+.tl-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  color: white;
+  opacity: 0.95;
+}
+.tl-label-center {
+  text-align: center;
+  flex: 1;
 }
 
 /* Data Stats */

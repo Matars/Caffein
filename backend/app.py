@@ -4,6 +4,7 @@ import os
 from dotenv import load_dotenv
 from db import init_db, get_db, get_connection_status, close_db
 from models import Message, FireDetectionSweden, NO2MeasurementSweden
+from sqlalchemy import func
 from logger import get_logger
 import atexit
 
@@ -98,8 +99,21 @@ def get_fires():
                 'status': 'error'
             }), 503
 
-        # Query fire detections - limit to 100 records for performance testing
-        fires_query = session.query(FireDetectionSweden).limit(100).all()
+        # Optional query parameters for filtering
+        limit = request.args.get('limit', 100, type=int)
+        date_from = request.args.get('date_from')  # YYYY-MM-DD
+        date_to = request.args.get('date_to')  # YYYY-MM-DD
+
+        # Build query
+        query = session.query(FireDetectionSweden)
+        if date_from:
+            query = query.filter(FireDetectionSweden.acq_date >= date_from)
+        if date_to:
+            query = query.filter(FireDetectionSweden.acq_date <= date_to)
+
+        # Order and limit
+        fires_query = query.order_by(
+            FireDetectionSweden.acq_date.desc()).limit(limit).all()
 
         # Check if table is empty
         if len(fires_query) == 0:
@@ -145,6 +159,31 @@ def get_fires():
             'error': str(e),
             'status': 'error'
         }), 500
+
+
+@app.route('/api/fires/range', methods=['GET'])
+def get_fires_range():
+    """Return the min and max acquisition dates available for Sweden fire detections"""
+    session = get_db()
+    try:
+        if session is None:
+            return jsonify({'error': 'Database not connected', 'status': 'error'}), 503
+
+        # Query min/max dates
+        res = session.query(func.min(FireDetectionSweden.acq_date).label('min_date'),
+                            func.max(FireDetectionSweden.acq_date).label('max_date')).one()
+        session.close()
+
+        min_date = res.min_date.isoformat() if res.min_date else None
+        max_date = res.max_date.isoformat() if res.max_date else None
+
+        return jsonify({'min_date': min_date, 'max_date': max_date, 'status': 'success'})
+
+    except Exception as e:
+        if session:
+            session.close()
+        logger.error(f"Error fetching fires date range: {str(e)}")
+        return jsonify({'error': str(e), 'status': 'error'}), 500
 
 
 @app.route('/api/no2', methods=['GET'])
