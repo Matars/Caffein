@@ -3,7 +3,7 @@ from flask_cors import CORS
 import os
 from dotenv import load_dotenv
 from db import init_db, get_db, get_connection_status, close_db
-from models import Message, FireDetection, NO2MeasurementSweden
+from models import Message, FireDetectionSweden, NO2MeasurementSweden
 from logger import get_logger
 import atexit
 
@@ -32,7 +32,8 @@ def hello():
     try:
         if session is not None:
             # Try to get message from database
-            message_obj = session.query(Message).filter_by(type='hello').first()
+            message_obj = session.query(
+                Message).filter_by(type='hello').first()
 
             if message_obj:
                 message = message_obj.content
@@ -41,7 +42,7 @@ def hello():
                 # Insert default message if not exists
                 default_message = Message(
                     type='hello',
-                    content='Hello World from Flask backend with PostgreSQL!'
+                    content='Hello from Caffein - NASA FIRMS Sweden Fire Detection System!'
                 )
                 session.add(default_message)
                 session.commit()
@@ -97,8 +98,8 @@ def get_fires():
                 'status': 'error'
             }), 503
 
-        # Query fire detections - limit to 10000 records
-        fires_query = session.query(FireDetection).limit(10000).all()
+        # Query fire detections - limit to 100 records for performance testing
+        fires_query = session.query(FireDetectionSweden).limit(100).all()
 
         # Check if table is empty
         if len(fires_query) == 0:
@@ -109,7 +110,7 @@ def get_fires():
                 'data': [],
                 'count': 0,
                 'status': 'success',
-                'message': 'No data found. Please run: python scripts/seed_fire_detections.py'
+                'message': 'No data found. Please run: python scripts/seed_sweden_data.py'
             })
 
         # Convert to dict and validate coordinates
@@ -169,14 +170,17 @@ def get_no2_measurements():
 
         # Apply filters
         if date_from:
-            query = query.filter(NO2MeasurementSweden.measurement_date >= date_from)
+            query = query.filter(
+                NO2MeasurementSweden.measurement_date >= date_from)
         if date_to:
-            query = query.filter(NO2MeasurementSweden.measurement_date <= date_to)
+            query = query.filter(
+                NO2MeasurementSweden.measurement_date <= date_to)
         if min_qa:
             query = query.filter(NO2MeasurementSweden.qa_value >= min_qa)
 
         # Order by date (most recent first) and apply limit
-        query = query.order_by(NO2MeasurementSweden.measurement_date.desc()).limit(limit)
+        query = query.order_by(
+            NO2MeasurementSweden.measurement_date.desc()).limit(limit)
 
         measurements = query.all()
 
@@ -199,7 +203,7 @@ def get_no2_measurements():
             # Validate coordinates and NO2 value exist
             if (measurement_dict['latitude'] is None or
                 measurement_dict['longitude'] is None or
-                measurement_dict['no2_column'] is None):
+                    measurement_dict['no2_column'] is None):
                 continue
 
             cleaned_measurements.append(measurement_dict)

@@ -15,6 +15,7 @@
         "format": "prettier --write src/"
     },
     "dependencies": {
+        "@vuepic/vue-datepicker": "^11.0.3",
         "maplibre-gl": "^5.8.0",
         "pinia": "^3.0.3",
         "vue": "^3.5.18",

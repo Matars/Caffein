@@ -30,8 +30,8 @@ const initMap = () => {
 
   map.value = new maplibregl.Map({
     container: mapContainer.value,
-    zoom: 2,
-    center: [0, 20],
+    zoom: 6,
+    center: [18.0686, 59.3293], // Stockholm, Sweden
     pitch: 0,
     hash: true,
     style: {
@@ -106,9 +106,9 @@ const loadFireData = async () => {
     console.log(`Loaded ${fires.value.length} fire records`)
 
     if (fires.value.length === 0) {
-      console.warn('No fire data available. Run the seed script to populate the database.')
+      console.warn('No fire data available. Run the Sweden seed script to populate the database.')
       alert(
-        'No fire data found. Please run the seed script: python backend/scripts/seed_fire_detections.py',
+        'No fire data found. Please run the seed script: python backend/scripts/seed_sweden_data.py',
       )
     } else {
       displayFireMarkers()
@@ -138,15 +138,17 @@ const displayFireMarkers = () => {
     let color = '#FF6B00' // Default orange
     if (fire.confidence) {
       const conf = parseInt(fire.confidence)
-      if (conf >= 80) color = '#FF0000' // High confidence - red
-      else if (conf >= 50) color = '#FF6B00' // Medium confidence - orange
+      if (conf >= 80)
+        color = '#FF0000' // High confidence - red
+      else if (conf >= 50)
+        color = '#FF6B00' // Medium confidence - orange
       else color = '#FFAA00' // Low confidence - yellow
     }
 
     // Create popup content with FIRMS data
     const popupContent = `
       <div style="font-family: sans-serif;">
-        <h3 style="margin: 0 0 8px 0; font-size: 14px;">🔥 Fire Detection</h3>
+        <h3 style="margin: 0 0 8px 0; font-size: 14px;">🔥 Sweden Fire Detection</h3>
         <p style="margin: 4px 0; font-size: 12px;"><strong>Date:</strong> ${fire.acq_date} ${fire.acq_time || ''}</p>
         <p style="margin: 4px 0; font-size: 12px;"><strong>Satellite:</strong> ${fire.satellite || 'N/A'} (${fire.instrument || 'N/A'})</p>
         <p style="margin: 4px 0; font-size: 12px;"><strong>Confidence:</strong> ${fire.confidence || 'N/A'}%</p>
@@ -183,7 +185,7 @@ const loadNO2Data = async () => {
 
   isLoadingNO2.value = true
   try {
-    const response = await apiService.getNO2({ limit: 100000, min_qa: 0.5 })
+    const response = await apiService.getNO2({ limit: 100, min_qa: 0.5 })
     no2Measurements.value = response.data
     console.log(`Loaded ${no2Measurements.value.length} NO2 measurement records`)
 
@@ -217,10 +219,14 @@ const displayNO2Markers = () => {
     const no2Value = measurement.no2_column
     let color = '#00FF00' // Green - low
 
-    if (no2Value > 1e16) color = '#8B0000' // Dark red - very high
-    else if (no2Value > 5e15) color = '#FF0000' // Red - high
-    else if (no2Value > 2e15) color = '#FF6B00' // Orange - moderate-high
-    else if (no2Value > 1e15) color = '#FFAA00' // Yellow - moderate
+    if (no2Value > 1e16)
+      color = '#8B0000' // Dark red - very high
+    else if (no2Value > 5e15)
+      color = '#FF0000' // Red - high
+    else if (no2Value > 2e15)
+      color = '#FF6B00' // Orange - moderate-high
+    else if (no2Value > 1e15)
+      color = '#FFAA00' // Yellow - moderate
     else if (no2Value > 5e14) color = '#90EE90' // Light green - low-moderate
 
     // Create popup content with NO2 data
@@ -228,7 +234,7 @@ const displayNO2Markers = () => {
       <div style="font-family: sans-serif;">
         <h3 style="margin: 0 0 8px 0; font-size: 14px;">🌫️ NO2 Measurement</h3>
         <p style="margin: 4px 0; font-size: 12px;"><strong>Date:</strong> ${measurement.measurement_date}</p>
-        <p style="margin: 4px 0; font-size: 12px;"><strong>NO2 Column:</strong> ${(no2Value).toExponential(2)} mol/cm²</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>NO2 Column:</strong> ${no2Value.toExponential(2)} mol/cm²</p>
         <p style="margin: 4px 0; font-size: 12px;"><strong>Quality:</strong> ${measurement.qa_value ? (measurement.qa_value * 100).toFixed(1) + '%' : 'N/A'}</p>
         <p style="margin: 4px 0; font-size: 12px;"><strong>Cloud Fraction:</strong> ${measurement.cloud_fraction ? (measurement.cloud_fraction * 100).toFixed(1) + '%' : 'N/A'}</p>
         <p style="margin: 4px 0; font-size: 11px; color: #666;">Lat: ${measurement.latitude.toFixed(4)}, Lon: ${measurement.longitude.toFixed(4)}</p>

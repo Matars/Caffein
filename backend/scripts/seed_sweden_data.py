@@ -1,9 +1,9 @@
 """
-Script to seed NASA FIRMS fire detection data from JSON files into PostgreSQL
-Processes large JSON files efficiently with streaming and batch inserts
+Script to seed NASA FIRMS Sweden fire detection data from JSON files into PostgreSQL
+Processes filtered Sweden data files efficiently with streaming and batch inserts
 Uses ijson for memory-efficient streaming of large JSON files
 """
-from models import Base, FireDetection, Message
+from models import Base, FireDetectionSweden, Message
 import json
 import sys
 import os
@@ -60,34 +60,34 @@ def connect_to_postgresql():
         return None, None
 
 
-def find_json_files():
-    """Find all FIRMS JSON files in the data directory"""
+def find_sweden_json_files():
+    """Find all FIRMS Sweden JSON files in the data/sweden directory"""
     # Try Docker mount path first, then relative path
-    data_dir = Path('/data')
+    data_dir = Path('/data/sweden')
     if not data_dir.exists():
-        data_dir = Path(__file__).parent.parent.parent / 'data'
+        data_dir = Path(__file__).parent.parent.parent / 'data' / 'sweden'
 
     if not data_dir.exists():
-        print(f"❌ Data directory not found at: {data_dir}")
+        print(f"❌ Sweden data directory not found at: {data_dir}")
         return []
 
-    # Find all JSON files that match FIRMS naming pattern
-    json_files = list(data_dir.glob('fire_*.json'))
+    # Find all JSON files that match Sweden FIRMS naming pattern
+    json_files = list(data_dir.glob('*_sweden.json'))
 
     if not json_files:
-        print(f"❌ No FIRMS JSON files found in: {data_dir}")
+        print(f"❌ No Sweden FIRMS JSON files found in: {data_dir}")
         return []
 
-    print(f"✓ Found {len(json_files)} JSON files:")
+    print(f"✓ Found {len(json_files)} Sweden JSON files:")
     for f in json_files:
-        size_gb = f.stat().st_size / (1024**3)
-        print(f"  - {f.name} ({size_gb:.2f} GB)")
+        size_mb = f.stat().st_size / (1024**2)
+        print(f"  - {f.name} ({size_mb:.2f} MB)")
 
     return json_files
 
 
-def process_single_file(json_file, batch_size=5000, limit_per_file=None):
-    """Process a single JSON file and insert records into DB"""
+def process_single_sweden_file(json_file, batch_size=5000, limit_per_file=None):
+    """Process a single Sweden JSON file and insert records into DB"""
     # Create a new engine and session for this thread
     engine = create_engine(
         DATABASE_URL,
@@ -130,7 +130,7 @@ def process_single_file(json_file, batch_size=5000, limit_per_file=None):
                     skipped += 1
                     continue
 
-                detection = FireDetection(
+                detection = FireDetectionSweden(
                     latitude=float(record['latitude']),
                     longitude=float(record['longitude']),
                     acq_date=acq_date,
@@ -151,7 +151,9 @@ def process_single_file(json_file, batch_size=5000, limit_per_file=None):
                     scan=float(record.get('scan')) if record.get(
                         'scan') else None,
                     track=float(record.get('track')) if record.get(
-                        'track') else None
+                        'track') else None,
+                    grid_lat_idx=record.get('grid_lat_idx'),
+                    grid_lon_idx=record.get('grid_lon_idx')
                 )
                 batch_records.append(detection)
                 records_processed += 1
@@ -188,19 +190,19 @@ def process_single_file(json_file, batch_size=5000, limit_per_file=None):
         return False, 0, 0
 
 
-def seed_fire_detections(session, json_files, batch_size=5000, limit_per_file=None):
-    """Seed fire detection data from JSON files into PostgreSQL using multithreading"""
+def seed_sweden_fire_detections(session, json_files, batch_size=5000, limit_per_file=None):
+    """Seed Sweden fire detection data from JSON files into PostgreSQL using multithreading"""
     if session is None or not json_files:
         print("❌ Session or data files not available. Cannot seed data.")
         return False
 
     try:
         # Check existing data and clear table
-        existing_count = session.query(FireDetection).count()
+        existing_count = session.query(FireDetectionSweden).count()
         if existing_count > 0:
             print(
-                f"⚠️  Found {existing_count:,} existing records. Clearing table...")
-            session.query(FireDetection).delete()
+                f"⚠️  Found {existing_count:,} existing Sweden records. Clearing table...")
+            session.query(FireDetectionSweden).delete()
             session.commit()
 
         total_inserted = 0
@@ -215,7 +217,7 @@ def seed_fire_detections(session, json_files, batch_size=5000, limit_per_file=No
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit all file processing tasks
             future_to_file = {
-                executor.submit(process_single_file, json_file, batch_size, limit_per_file): json_file
+                executor.submit(process_single_sweden_file, json_file, batch_size, limit_per_file): json_file
                 for json_file in json_files
             }
 
@@ -233,7 +235,8 @@ def seed_fire_detections(session, json_files, batch_size=5000, limit_per_file=No
                         f"  ❌ Thread for {json_file.name} raised exception: {str(e)}")
                     total_success = False
 
-        print(f"\n✓ Total inserted {total_inserted:,} fire detection records.")
+        print(
+            f"\n✓ Total inserted {total_inserted:,} Sweden fire detection records.")
         if total_skipped > 0:
             print(
                 f"  ⚠️  Total skipped {total_skipped:,} records (invalid data)")
@@ -241,7 +244,7 @@ def seed_fire_detections(session, json_files, batch_size=5000, limit_per_file=No
 
     except Exception as e:
         session.rollback()
-        print(f"❌ Error seeding fire detections: {str(e)}")
+        print(f"❌ Error seeding Sweden fire detections: {str(e)}")
         import traceback
         traceback.print_exc()
         return False
@@ -259,7 +262,7 @@ def seed_default_message(session):
         # Insert default message
         message = Message(
             type='hello',
-            content='Hello from Caffein - NASA FIRMS Fire Detection System!'
+            content='Hello from Caffein - NASA FIRMS Sweden Fire Detection System!'
         )
         session.add(message)
         session.commit()
@@ -273,9 +276,9 @@ def seed_default_message(session):
 
 
 def main():
-    """Main function to seed the database"""
+    """Main function to seed the Sweden database"""
     print("=" * 70)
-    print("NASA FIRMS Fire Detection Data Seeding Script")
+    print("NASA FIRMS Sweden Fire Detection Data Seeding Script")
     print("=" * 70)
 
     # Parse command line arguments
@@ -305,19 +308,19 @@ def main():
         print(f"❌ Error creating tables: {str(e)}")
         sys.exit(1)
 
-    # Find JSON files
-    print("\n[3/5] Finding JSON data files...")
-    json_files = find_json_files()
+    # Find Sweden JSON files
+    print("\n[3/5] Finding Sweden JSON data files...")
+    json_files = find_sweden_json_files()
     if not json_files:
-        print("\n❌ No data files found. Exiting.")
+        print("\n❌ No Sweden data files found. Exiting.")
         sys.exit(1)
 
     # Seed the database
     session = Session()
 
     print(f"\n[4/5] Seeding database...")
-    print("\n  → Seeding fire detections...")
-    fire_success = seed_fire_detections(
+    print("\n  → Seeding Sweden fire detections...")
+    fire_success = seed_sweden_fire_detections(
         session, json_files, limit_per_file=limit_per_file)
 
     print("\n  → Seeding default message...")
@@ -330,11 +333,11 @@ def main():
 
     if fire_success and message_success:
         print("\n" + "=" * 70)
-        print("✓ Seeding completed successfully!")
+        print("✓ Sweden seeding completed successfully!")
         print("=" * 70)
     else:
         print("\n" + "=" * 70)
-        print("❌ Seeding failed!")
+        print("❌ Sweden seeding failed!")
         print("=" * 70)
         sys.exit(1)
 
