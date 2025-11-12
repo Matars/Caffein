@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Core data-lake stack (no Glue jobs yet)
+  - One S3 bucket for raw / staging / analytics / scripts / Athena temp
+  - Glue IAM role for future jobs
+  - Glue Database
+  - Athena WorkGroup
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: caffine-analytics-storage
+    Description: Prefix for the S3 bucket name
+  GlueDatabaseName:
+    Type: String
+    Default: caffine_analytics_db
+    Description: Glue database for analytics tables
+  AthenaWorkGroupName:
+    Type: String
+    Default: caffine-analytics-workgroup
+    Description: Athena WorkGroup writing results to the same bucket
+
+Resources:
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectName}-${AWS::Region}-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        IgnorePublicAcls: true
+        BlockPublicPolicy: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+
+  DataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DataBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: DenyPublicAcl
+            Effect: Deny
+            Principal: "*"
+            Action:
+              - "s3:PutBucketAcl"
+              - "s3:PutObjectAcl"
+            Resource:
+              - !Sub arn:aws:s3:::${DataBucket}
+              - !Sub arn:aws:s3:::${DataBucket}/*
+
+  GlueServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'GlueETLRole-${AWS::StackName}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - glue.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
+      Policies:
+        - PolicyName: GlueS3AccessPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Sid: S3Access
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub arn:aws:s3:::${DataBucket}
+              - Sid: S3ObjectAccess
+                Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub arn:aws:s3:::${DataBucket}/*
+                  - arn:aws:s3:::caff-dump/*
+              - Sid: SecretAccess
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: "*"
+              - Sid: CloudWatchLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  GlueDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Ref GlueDatabaseName
+        Description: Glue database for analytics tables
+
+  AthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: !Ref AthenaWorkGroupName
+      Description: WorkGroup writing results to the same bucket under /tmp/athena-results/
+      WorkGroupConfiguration:
+        EnforceWorkGroupConfiguration: true
+        ResultConfiguration:
+          OutputLocation: !Sub "s3://${DataBucket}/tmp/athena-results/"
+        PublishCloudWatchMetricsEnabled: true
+
+  WildFireTable:
+    Type: AWS::Glue::Table
+    Properties:
+      DatabaseName: !Ref GlueDatabaseName
+      CatalogId: !Ref AWS::AccountId
+      TableInput:
+        Name: wild_fire
+        Description: Partitioned wild fire data from NASA (Parquet)
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: parquet
+          EXTERNAL: 'TRUE'
+        StorageDescriptor:
+          Location: !Sub 's3://${DataBucket}/raw/nasa/wild_fire/'
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+          Columns:
+            - Name: latitude
+              Type: double
+            - Name: longitude
+              Type: double
+            - Name: acq_date
+              Type: date
+            - Name: acq_time
+              Type: string
+            - Name: confidence
+              Type: string
+            - Name: frp
+              Type: double
+            - Name: version
+              Type: string
+            - Name: instrument
+              Type: string
+            - Name: daynight
+              Type: string
+            - Name: bright_t31
+              Type: double
+            - Name: type
+              Type: string
+            - Name: scan
+              Type: double
+            - Name: brightness
+              Type: double
+            - Name: track
+              Type: double
+            - Name: satellite
+              Type: string
+          Compressed: true
+        PartitionKeys:
+          - Name: year
+            Type: int
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+
+Outputs:
+  DataBucket:
+    Description: S3 bucket name for raw/staging/analytics/scripts/tmp
+    Value: !Ref DataBucket
+  GlueRoleArn:
+    Description: IAM Role ARN for future Glue jobs
+    Value: !GetAtt GlueServiceRole.Arn
+  GlueDatabase:
+    Description: Glue database name
+    Value: !Ref GlueDatabaseName
+  AthenaWorkGroup:
+    Description: Athena workgroup configured to write results to s3://<bucket>/tmp/athena-results/
+    Value: !Ref AthenaWorkGroupName
+  WildFireTableName:
+    Description: Glue table name for wild fire data (query in Athena)
+    Value: wild_fire
