@@ -6,6 +6,7 @@ from db import init_db, get_db, get_connection_status, close_db
 from models import Message, FireDetectionSweden, NO2MeasurementSweden
 from sqlalchemy import func
 from logger import get_logger
+from athena_client import get_athena_client
 import atexit
 
 # Load environment variables
@@ -184,6 +185,77 @@ def get_fires_range():
             session.close()
         logger.error(f"Error fetching fires date range: {str(e)}")
         return jsonify({'error': str(e), 'status': 'error'}), 500
+
+
+@app.route('/api/fires/athena', methods=['GET'])
+def get_fires_athena():
+    """
+    Query wildfire data from AWS Athena by bounding box
+    
+    Query parameters:
+    - min_lat: Minimum latitude (default: 55.0 for Sweden)
+    - max_lat: Maximum latitude (default: 69.0 for Sweden)
+    - min_lon: Minimum longitude (default: 11.0 for Sweden)
+    - max_lon: Maximum longitude (default: 24.0 for Sweden)
+    - limit: Maximum number of results (default: 1000)
+    """
+    try:
+        # Get bounding box parameters (default to Sweden)
+        min_lat = request.args.get('min_lat', 55.0, type=float)
+        max_lat = request.args.get('max_lat', 69.0, type=float)
+        min_lon = request.args.get('min_lon', 11.0, type=float)
+        max_lon = request.args.get('max_lon', 24.0, type=float)
+        limit = request.args.get('limit', 1000, type=int)
+
+        # Validate inputs
+        if min_lat >= max_lat:
+            return jsonify({
+                'error': 'min_lat must be less than max_lat',
+                'status': 'error'
+            }), 400
+
+        if min_lon >= max_lon:
+            return jsonify({
+                'error': 'min_lon must be less than max_lon',
+                'status': 'error'
+            }), 400
+
+        logger.info(
+            f"Querying Athena for wildfires: "
+            f"lat=[{min_lat}, {max_lat}], lon=[{min_lon}, {max_lon}], limit={limit}"
+        )
+
+        # Query Athena
+        athena_client = get_athena_client()
+        results = athena_client.query_wildfire_by_bbox(
+            min_lat=min_lat,
+            max_lat=max_lat,
+            min_lon=min_lon,
+            max_lon=max_lon,
+            limit=limit
+        )
+
+        logger.info(f"Athena query returned {len(results)} records")
+
+        return jsonify({
+            'data': results,
+            'count': len(results),
+            'status': 'success',
+            'source': 'athena',
+            'bbox': {
+                'min_lat': min_lat,
+                'max_lat': max_lat,
+                'min_lon': min_lon,
+                'max_lon': max_lon
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error querying Athena: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
 
 
 @app.route('/api/no2', methods=['GET'])

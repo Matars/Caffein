@@ -37,6 +37,13 @@ export interface FiresResponse {
   status: string
   error?: string
   message?: string
+  source?: string
+  bbox?: {
+    min_lat: number
+    max_lat: number
+    min_lon: number
+    max_lon: number
+  }
 }
 
 export interface NO2Measurement {
@@ -122,6 +129,33 @@ export const apiService = {
       return await response.json()
     } catch (error) {
       console.error('Error fetching fires date range:', error)
+      throw error
+    }
+  },
+
+  async getFiresAthena(params: {
+    min_lat: number
+    max_lat: number
+    min_lon: number
+    max_lon: number
+    limit?: number
+  }): Promise<FiresResponse> {
+    try {
+      const queryParams = new URLSearchParams()
+      queryParams.append('min_lat', params.min_lat.toString())
+      queryParams.append('max_lat', params.max_lat.toString())
+      queryParams.append('min_lon', params.min_lon.toString())
+      queryParams.append('max_lon', params.max_lon.toString())
+      if (params?.limit) queryParams.append('limit', params.limit.toString())
+
+      const url = `${API_BASE_URL}/fires/athena?${queryParams.toString()}`
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Error fetching fire data from Athena:', error)
       throw error
     }
   },

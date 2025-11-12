@@ -11,3 +11,4 @@ folium
 sqlalchemy
 psycopg2-binary
 ijson
+boto3
