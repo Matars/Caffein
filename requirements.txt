@@ -11,3 +11,4 @@ folium
 boto3
 prophet
 scikit-learn
+plotly
