@@ -9,3 +9,5 @@ matplotlib
 seaborn
 folium
 boto3
+prophet
+scikit-learn
