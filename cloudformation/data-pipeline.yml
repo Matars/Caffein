@@ -89,6 +89,11 @@ Resources:
                 Resource:
                   - !Sub arn:aws:s3:::${DataBucket}/*
                   - arn:aws:s3:::caff-dump/*
+              - Sid: SecretAccess
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: "*"
               - Sid: CloudWatchLogs
                 Effect: Allow
                 Action:
@@ -116,6 +121,64 @@ Resources:
           OutputLocation: !Sub "s3://${DataBucket}/tmp/athena-results/"
         PublishCloudWatchMetricsEnabled: true
 
+  WildFireTable:
+    Type: AWS::Glue::Table
+    Properties:
+      DatabaseName: !Ref GlueDatabaseName
+      CatalogId: !Ref AWS::AccountId
+      TableInput:
+        Name: wild_fire
+        Description: Partitioned wild fire data from NASA (Parquet)
+        TableType: EXTERNAL_TABLE
+        Parameters:
+          classification: parquet
+          EXTERNAL: 'TRUE'
+        StorageDescriptor:
+          Location: !Sub 's3://${DataBucket}/raw/nasa/wild_fire/'
+          InputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat
+          OutputFormat: org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat
+          SerdeInfo:
+            SerializationLibrary: org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe
+          Columns:
+            - Name: latitude
+              Type: double
+            - Name: longitude
+              Type: double
+            - Name: acq_date
+              Type: date
+            - Name: acq_time
+              Type: string
+            - Name: confidence
+              Type: string
+            - Name: frp
+              Type: double
+            - Name: version
+              Type: string
+            - Name: instrument
+              Type: string
+            - Name: daynight
+              Type: string
+            - Name: bright_t31
+              Type: double
+            - Name: type
+              Type: string
+            - Name: scan
+              Type: double
+            - Name: brightness
+              Type: double
+            - Name: track
+              Type: double
+            - Name: satellite
+              Type: string
+          Compressed: true
+        PartitionKeys:
+          - Name: year
+            Type: int
+          - Name: month
+            Type: string
+          - Name: day
+            Type: string
+
 Outputs:
   DataBucket:
     Description: S3 bucket name for raw/staging/analytics/scripts/tmp
@@ -129,3 +192,6 @@ Outputs:
   AthenaWorkGroup:
     Description: Athena workgroup configured to write results to s3://<bucket>/tmp/athena-results/
     Value: !Ref AthenaWorkGroupName
+  WildFireTableName:
+    Description: Glue table name for wild fire data (query in Athena)
+    Value: wild_fire
