@@ -29,6 +29,21 @@ const bboxSource = ref<any>(null)
 const athenaFires = ref<any[]>([])
 const isLoadingAthena = ref(false)
 const currentBbox = ref<{ min_lat: number; max_lat: number; min_lon: number; max_lon: number } | null>(null)
+const cursorX = ref(0)
+const cursorY = ref(0)
+
+// Time filter state (2024 months: 0=Jan, 11=Dec)
+const selectedMonth = ref(0) // Default to January 2024
+const months = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+]
+
+// Track mouse position for cursor tooltip
+const handleMouseMove = (e: MouseEvent) => {
+  cursorX.value = e.clientX + 10
+  cursorY.value = e.clientY + 10
+}
 
 // Forward declarations for functions used in initMap
 const displayAthenaFireMarkers = () => {
@@ -88,6 +103,12 @@ const handleMapClick = (e: maplibregl.MapMouseEvent) => {
       queryAthenaFires(minLat, maxLat, minLon, maxLon)
 
       bboxStartPoint.value = null
+      
+      // Automatically exit bbox mode after completing the query
+      isBboxMode.value = false
+      if (map.value) {
+        map.value.getCanvas().style.cursor = ''
+      }
     }
     return
   }
@@ -207,6 +228,21 @@ const drawBoundingBox = (minLat: number, maxLat: number, minLon: number, maxLon:
   bboxLayer.value = layerId
 }
 
+const getMonthDateRange = (monthIndex: number) => {
+  const year = 2024
+  const startDate = new Date(year, monthIndex, 1)
+  const endDate = new Date(year, monthIndex + 1, 0) // Last day of month
+  
+  const formatDate = (date: Date) => {
+    return date.toISOString().split('T')[0]
+  }
+  
+  return {
+    start_date: formatDate(startDate),
+    end_date: formatDate(endDate)
+  }
+}
+
 const queryAthenaFires = async (
   minLat: number,
   maxLat: number,
@@ -217,16 +253,19 @@ const queryAthenaFires = async (
 
   isLoadingAthena.value = true
   try {
+    const dateRange = getMonthDateRange(selectedMonth.value)
     const response = await apiService.getFiresAthena({
       min_lat: minLat,
       max_lat: maxLat,
       min_lon: minLon,
       max_lon: maxLon,
       limit: 1000,
+      start_date: dateRange.start_date,
+      end_date: dateRange.end_date,
     })
 
     athenaFires.value = response.data
-    console.log(`Loaded ${athenaFires.value.length} fires from Athena within bbox`)
+    console.log(`Loaded ${athenaFires.value.length} fires from Athena for ${months[selectedMonth.value]} 2024`)
 
     // Display fires on map
     displayAthenaFireMarkers()
@@ -323,7 +362,12 @@ const initMap = () => {
         max_lon: 24.0,
         limit: 500,
       }
-      const response = await apiService.getFiresAthena(defaultBbox)
+      const dateRange = getMonthDateRange(selectedMonth.value)
+      const response = await apiService.getFiresAthena({
+        ...defaultBbox,
+        start_date: dateRange.start_date,
+        end_date: dateRange.end_date,
+      })
       athenaFires.value = response.data
       currentBbox.value = {
         min_lat: defaultBbox.min_lat,
@@ -331,7 +375,7 @@ const initMap = () => {
         min_lon: defaultBbox.min_lon,
         max_lon: defaultBbox.max_lon,
       }
-      console.log(`Loaded ${athenaFires.value.length} fire records from Athena`)
+      console.log(`Loaded ${athenaFires.value.length} fire records from Athena for ${months[selectedMonth.value]} 2024`)
       if (athenaFires.value.length > 0) {
         displayAthenaFireMarkers()
         // Fit map to show all markers
@@ -378,15 +422,6 @@ const loadFireDataForSelectedMonth = async () => {
   // Deprecated: Use queryAthenaFires instead
   console.warn('loadFireDataForSelectedMonth deprecated')
 }
-
-const prevMonth = async () => {
-  // Deprecated: Month slider no longer used
-  console.warn('prevMonth deprecated')
-}
-
-const nextMonth = async () => {
-  // Deprecated: Month slider no longer used
-  console.warn('nextMonth deprecated')
 
 const loadNO2Data = async () => {
   if (!map.value) return
@@ -599,12 +634,51 @@ const toggleBboxMode = () => {
   }
 }
 
+// Month navigation functions
+const prevMonth = () => {
+  if (selectedMonth.value > 0) {
+    selectedMonth.value--
+    reloadFiresForCurrentView()
+  }
+}
+
+const nextMonth = () => {
+  if (selectedMonth.value < 11) {
+    selectedMonth.value++
+    reloadFiresForCurrentView()
+  }
+}
+
+const selectMonth = (monthIndex: number) => {
+  selectedMonth.value = monthIndex
+  reloadFiresForCurrentView()
+}
+
+const reloadFiresForCurrentView = () => {
+  if (currentBbox.value) {
+    // If bbox is set, reload with bbox
+    queryAthenaFires(
+      currentBbox.value.min_lat,
+      currentBbox.value.max_lat,
+      currentBbox.value.min_lon,
+      currentBbox.value.max_lon
+    )
+  } else {
+    // Otherwise reload with default Sweden bbox
+    queryAthenaFires(55.0, 69.0, 11.0, 24.0)
+  }
+}
+
 onMounted(() => {
   initMap()
+  // Add mouse move listener for cursor tooltip
+  window.addEventListener('mousemove', handleMouseMove)
 })
 
 onBeforeUnmount(() => {
   map.value?.remove()
+  // Remove mouse move listener
+  window.removeEventListener('mousemove', handleMouseMove)
 })
 </script>
 
@@ -678,15 +752,15 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Loading Indicator -->
-    <div v-if="isLoadingFires || isLoadingNO2" class="loading-indicator">
+    <div v-if="isLoadingAthena || isLoadingNO2" class="loading-indicator">
       <div class="spinner"></div>
-      <p v-if="isLoadingFires">Loading fire data...</p>
+      <p v-if="isLoadingAthena">Loading fire data...</p>
       <p v-if="isLoadingNO2">Loading NO2 data...</p>
     </div>
 
     <!-- Data Stats -->
-    <div v-if="fires.length > 0 || no2Measurements.length > 0" class="data-stats">
-      <p v-if="fires.length > 0 && showFireLayer">🔥 {{ fires.length.toLocaleString() }} fires</p>
+    <div v-if="athenaFires.length > 0 || no2Measurements.length > 0" class="data-stats">
+      <p v-if="athenaFires.length > 0 && showFireLayer">🔥 {{ athenaFires.length.toLocaleString() }} fires</p>
       <p v-if="no2Measurements.length > 0 && showNO2Layer">
         🌫️ {{ no2Measurements.length.toLocaleString() }} NO2 measurements
       </p>
@@ -704,12 +778,52 @@ onBeforeUnmount(() => {
       </p>
     </div>
 
-    <!-- Bbox Mode Hint -->
-    <div v-if="isBboxMode && !bboxStartPoint" class="bbox-hint">
-      Click on map to set first corner of bounding box
+    <!-- Cursor tooltip for bbox mode -->
+    <div 
+      v-if="isBboxMode" 
+      class="cursor-tooltip"
+      :style="{ left: cursorX + 'px', top: cursorY + 'px' }"
+    >
+      {{ bboxStartPoint ? '2nd corner' : '1st corner' }}
     </div>
-    <div v-else-if="isBboxMode && bboxStartPoint" class="bbox-hint">
-      Click again to set second corner and query fires
+
+    <!-- Time Slider -->
+    <div class="time-slider-container">
+      <div class="time-slider-header">
+        <span class="time-slider-title">🔥 2024 - {{ months[selectedMonth] }}</span>
+      </div>
+      
+      <div class="time-slider-controls">
+        <button 
+          @click="prevMonth" 
+          :disabled="selectedMonth === 0"
+          class="month-nav-btn"
+          title="Previous month"
+        >
+          ◀
+        </button>
+        
+        <div class="month-slider">
+          <div 
+            v-for="(month, index) in months" 
+            :key="index"
+            @click="selectMonth(index)"
+            :class="['month-notch', { active: selectedMonth === index }]"
+            :title="month + ' 2024'"
+          >
+            <span class="month-label">{{ month }}</span>
+          </div>
+        </div>
+        
+        <button 
+          @click="nextMonth" 
+          :disabled="selectedMonth === 11"
+          class="month-nav-btn"
+          title="Next month"
+        >
+          ▶
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -1004,20 +1118,124 @@ onBeforeUnmount(() => {
   border-left: 4px solid #088;
 }
 
-/* Bbox Mode Hint */
-.bbox-hint {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: white;
-  padding: 16px 24px;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  z-index: 2;
+/* Cursor tooltip for bbox mode */
+.cursor-tooltip {
+  position: fixed;
+  background: rgba(0, 136, 136, 0.9);
+  color: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
   font-weight: 600;
-  color: #088;
+  z-index: 10000;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+/* Time Slider */
+.time-slider-container {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.95);
+  padding: 16px 24px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 1000;
+  min-width: 700px;
+  backdrop-filter: blur(10px);
+}
+
+.time-slider-header {
   text-align: center;
-  border: 2px dashed #088;
+  margin-bottom: 12px;
+}
+
+.time-slider-title {
+  font-weight: 700;
+  font-size: 16px;
+  color: #ff6b35;
+}
+
+.time-slider-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.month-nav-btn {
+  background: #088;
+  color: white;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+
+.month-nav-btn:hover:not(:disabled) {
+  background: #0aa;
+  transform: scale(1.1);
+}
+
+.month-nav-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.month-slider {
+  display: flex;
+  gap: 8px;
+  flex: 1;
+  justify-content: space-between;
+}
+
+.month-notch {
+  flex: 1;
+  height: 40px;
+  background: #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border: 2px solid transparent;
+}
+
+.month-notch:hover {
+  background: #c0c0c0;
+  transform: translateY(-2px);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+
+.month-notch.active {
+  background: linear-gradient(135deg, #ff6b35, #ff8c42);
+  border-color: #ff6b35;
+  transform: translateY(-3px);
+  box-shadow: 0 4px 8px rgba(255, 107, 53, 0.4);
+}
+
+.month-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #666;
+  user-select: none;
+}
+
+.month-notch.active .month-label {
+  color: white;
+  font-size: 12px;
 }
 </style>
+

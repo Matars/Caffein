@@ -198,6 +198,8 @@ def get_fires_athena():
     - min_lon: Minimum longitude (default: 11.0 for Sweden)
     - max_lon: Maximum longitude (default: 24.0 for Sweden)
     - limit: Maximum number of results (default: 1000)
+    - start_date: Start date (YYYY-MM-DD format, optional)
+    - end_date: End date (YYYY-MM-DD format, optional)
     """
     try:
         # Get bounding box parameters (default to Sweden)
@@ -206,6 +208,8 @@ def get_fires_athena():
         min_lon = request.args.get('min_lon', 11.0, type=float)
         max_lon = request.args.get('max_lon', 24.0, type=float)
         limit = request.args.get('limit', 1000, type=int)
+        start_date = request.args.get('start_date', type=str)
+        end_date = request.args.get('end_date', type=str)
 
         # Validate inputs
         if min_lat >= max_lat:
@@ -222,7 +226,8 @@ def get_fires_athena():
 
         logger.info(
             f"Querying Athena for wildfires: "
-            f"lat=[{min_lat}, {max_lat}], lon=[{min_lon}, {max_lon}], limit={limit}"
+            f"lat=[{min_lat}, {max_lat}], lon=[{min_lon}, {max_lon}], "
+            f"dates=[{start_date}, {end_date}], limit={limit}"
         )
 
         # Query Athena
@@ -232,7 +237,9 @@ def get_fires_athena():
             max_lat=max_lat,
             min_lon=min_lon,
             max_lon=max_lon,
-            limit=limit
+            limit=limit,
+            start_date=start_date,
+            end_date=end_date
         )
 
         logger.info(f"Athena query returned {len(results)} records")
@@ -247,7 +254,11 @@ def get_fires_athena():
                 'max_lat': max_lat,
                 'min_lon': min_lon,
                 'max_lon': max_lon
-            }
+            },
+            'date_range': {
+                'start_date': start_date,
+                'end_date': end_date
+            } if start_date or end_date else None
         })
 
     except Exception as e:

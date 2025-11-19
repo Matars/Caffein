@@ -139,6 +139,8 @@ export const apiService = {
     min_lon: number
     max_lon: number
     limit?: number
+    start_date?: string
+    end_date?: string
   }): Promise<FiresResponse> {
     try {
       const queryParams = new URLSearchParams()
@@ -147,6 +149,8 @@ export const apiService = {
       queryParams.append('min_lon', params.min_lon.toString())
       queryParams.append('max_lon', params.max_lon.toString())
       if (params?.limit) queryParams.append('limit', params.limit.toString())
+      if (params?.start_date) queryParams.append('start_date', params.start_date)
+      if (params?.end_date) queryParams.append('end_date', params.end_date)
 
       const url = `${API_BASE_URL}/fires/athena?${queryParams.toString()}`
       const response = await fetch(url)
