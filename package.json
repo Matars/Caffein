@@ -1,0 +1,22 @@
+{
+  "name": "caffein",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Fire and Pollution Webapp with Simulation",
+  "scripts": {
+    "setup": "pnpm install && pnpm run setup:venv && pnpm run setup:backend",
+    "setup:venv": "python3 -m venv venv && echo 'Virtual environment created at ./venv'",
+    "setup:backend": "bash -c 'source venv/bin/activate && pip install -r requirements.txt'",
+    "setup:frontend": "pnpm install",
+    "dev": "pnpm run dev:start",
+    "dev:start": "concurrently -n \"backend,frontend\" -c \"bgBlue.bold,bgMagenta.bold\" \"pnpm run dev:backend\" \"pnpm run dev:frontend\"",
+    "dev:backend": "bash -c 'source venv/bin/activate && cd backend && python app.py'",
+    "dev:frontend": "cd frontend && pnpm run dev",
+    "build": "cd frontend && pnpm run build",
+    "preview": "cd frontend && pnpm run preview"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

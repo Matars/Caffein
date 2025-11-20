@@ -354,5 +354,6 @@ def get_no2_measurements():
 
 
 if __name__ == '__main__':
-    logger.info("Starting Flask development server on port 5001")
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    port = int(os.environ.get('PORT', 5000))
+    logger.info(f"Starting Flask development server on port {port}")
+    app.run(debug=True, host='0.0.0.0', port=port)

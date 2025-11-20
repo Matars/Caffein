@@ -7,7 +7,7 @@
     "dataset": "COPERNICUS/S5P/OFFL/L3_CH4",
     "sampling_mode": "region_mean",
     "observations": 6,
-    "fetched_at": "20251110_224321"
+    "fetched_at": "20251113_130731"
   },
   "data": [
     {
