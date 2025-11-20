@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { apiService, type Fire } from '../services/api'
+import { apiService, type FireDetection, type NO2Measurement } from '../services/api'
 
 const mapContainer = ref<HTMLDivElement | null>(null)
 const map = ref<maplibregl.Map | null>(null)
@@ -12,17 +12,250 @@ const searchQuery = ref('')
 const searchResults = ref<any[]>([])
 const showResults = ref(false)
 const isSearching = ref(false)
-const fires = ref<Fire[]>([])
-const isLoadingFires = ref(false)
 const fireMarkers = ref<maplibregl.Marker[]>([])
+const isDropFireMode = ref(false)
+const droppedFireLocation = ref<{ lng: number; lat: number } | null>(null)
+const droppedFireMarker = ref<maplibregl.Marker | null>(null)
+const isMenuOpen = ref(false)
+const no2Measurements = ref<NO2Measurement[]>([])
+const isLoadingNO2 = ref(false)
+const no2Markers = ref<maplibregl.Marker[]>([])
+const showNO2Layer = ref(false)
+const showFireLayer = ref(true)
+const isBboxMode = ref(false)
+const bboxStartPoint = ref<{ lng: number; lat: number } | null>(null)
+const bboxLayer = ref<any>(null)
+const bboxSource = ref<any>(null)
+const athenaFires = ref<any[]>([])
+const isLoadingAthena = ref(false)
+const currentBbox = ref<{ min_lat: number; max_lat: number; min_lon: number; max_lon: number } | null>(null)
+
+// Forward declarations for functions used in initMap
+const displayAthenaFireMarkers = () => {
+  if (!map.value) return
+
+  // Clear existing markers (keep the bbox on map)
+  fireMarkers.value.forEach((marker) => marker.remove())
+  fireMarkers.value = []
+
+  // Add markers for each Athena fire
+  athenaFires.value.forEach((fire: any) => {
+    if (!fire.latitude || !fire.longitude) return
+
+    let color = '#FF6B00'
+    if (fire.confidence) {
+      const conf = parseInt(fire.confidence)
+      if (conf >= 80) color = '#FF0000'
+      else if (conf >= 50) color = '#FF6B00'
+      else color = '#FFAA00'
+    }
+
+    const popupContent = `
+      <div style="font-family: sans-serif;">
+        <h3 style="margin: 0 0 8px 0; font-size: 14px;">🔥 Fire Detection (Athena)</h3>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Date:</strong> ${fire.acq_date || 'N/A'}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Confidence:</strong> ${fire.confidence || 'N/A'}%</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>FRP:</strong> ${fire.frp ? fire.frp.toFixed(1) + ' MW' : 'N/A'}</p>
+        <p style="margin: 4px 0; font-size: 11px; color: #666;">Lat: ${fire.latitude.toFixed(4)}, Lon: ${fire.longitude.toFixed(4)}</p>
+      </div>
+    `
+
+    const marker = new maplibregl.Marker({ color, scale: 0.6 })
+      .setLngLat([fire.longitude, fire.latitude])
+      .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(popupContent))
+      .addTo(map.value!)
+
+    fireMarkers.value.push(marker)
+  })
+}
+
+const handleMapClick = (e: maplibregl.MapMouseEvent) => {
+  if (isBboxMode.value && map.value) {
+    const { lng, lat } = e.lngLat
+
+    if (!bboxStartPoint.value) {
+      // First click - set start point
+      bboxStartPoint.value = { lng, lat }
+    } else {
+      // Second click - create bounding box and query
+      const minLat = Math.min(bboxStartPoint.value.lat, lat)
+      const maxLat = Math.max(bboxStartPoint.value.lat, lat)
+      const minLon = Math.min(bboxStartPoint.value.lng, lng)
+      const maxLon = Math.max(bboxStartPoint.value.lng, lng)
+
+      currentBbox.value = { min_lat: minLat, max_lat: maxLat, min_lon: minLon, max_lon: maxLon }
+      drawBoundingBox(minLat, maxLat, minLon, maxLon)
+      queryAthenaFires(minLat, maxLat, minLon, maxLon)
+
+      bboxStartPoint.value = null
+    }
+    return
+  }
+
+  if (!isDropFireMode.value || !map.value) return
+
+  const { lng, lat } = e.lngLat
+
+  // Store the dropped fire location
+  droppedFireLocation.value = { lng, lat }
+
+  // Remove previous marker if it exists
+  if (droppedFireMarker.value) {
+    droppedFireMarker.value.remove()
+  }
+
+  // Create a distinctive marker for the dropped fire starting point
+  const el = document.createElement('div')
+  el.className = 'fire-drop-marker'
+  el.style.width = '30px'
+  el.style.height = '30px'
+  el.style.borderRadius = '50%'
+  el.style.backgroundColor = '#FF4500'
+  el.style.border = '3px solid #FFD700'
+  el.style.boxShadow = '0 0 10px rgba(255, 69, 0, 0.8)'
+  el.style.cursor = 'pointer'
+  el.innerHTML = '🔥'
+  el.style.display = 'flex'
+  el.style.alignItems = 'center'
+  el.style.justifyContent = 'center'
+  el.style.fontSize = '18px'
+
+  // Create popup with coordinates
+  const popupContent = `
+    <div style="font-family: sans-serif; min-width: 200px;">
+      <h3 style="margin: 0 0 8px 0; font-size: 14px; color: #FF4500;">🔥 Fire Starting Point</h3>
+      <p style="margin: 4px 0; font-size: 12px;"><strong>Latitude:</strong> ${lat.toFixed(6)}</p>
+      <p style="margin: 4px 0; font-size: 12px;"><strong>Longitude:</strong> ${lng.toFixed(6)}</p>
+      <p style="margin: 8px 0 4px 0; font-size: 11px; color: #666;">Click again to relocate</p>
+    </div>
+  `
+
+  // Create and add the marker
+  droppedFireMarker.value = new maplibregl.Marker({ element: el })
+    .setLngLat([lng, lat])
+    .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(popupContent))
+    .addTo(map.value)
+
+  console.log('Fire starting point dropped at:', { lng, lat })
+}
+
+const drawBoundingBox = (minLat: number, maxLat: number, minLon: number, maxLon: number) => {
+  if (!map.value) return
+
+  // Create GeoJSON for the bbox rectangle
+  const bboxGeoJson = {
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        geometry: {
+          type: 'Polygon',
+          coordinates: [
+            [
+              [minLon, minLat],
+              [maxLon, minLat],
+              [maxLon, maxLat],
+              [minLon, maxLat],
+              [minLon, minLat],
+            ],
+          ],
+        },
+      },
+    ],
+  }
+
+  // Remove old layer and source if they exist
+  if (bboxLayer.value && map.value.getLayer(bboxLayer.value)) {
+    map.value.removeLayer(bboxLayer.value)
+  }
+  if (bboxSource.value && map.value.getSource(bboxSource.value)) {
+    map.value.removeSource(bboxSource.value)
+  }
+
+  // Add new source
+  const sourceId = 'bbox-source'
+  const layerId = 'bbox-layer'
+
+  map.value.addSource(sourceId, {
+    type: 'geojson',
+    data: bboxGeoJson as any,
+  })
+
+  // Add fill layer
+  map.value.addLayer({
+    id: layerId,
+    type: 'fill',
+    source: sourceId,
+    paint: {
+      'fill-color': '#088',
+      'fill-opacity': 0.1,
+    },
+  })
+
+  // Add border
+  map.value.addLayer({
+    id: `${layerId}-border`,
+    type: 'line',
+    source: sourceId,
+    paint: {
+      'line-color': '#088',
+      'line-width': 2,
+    },
+  })
+
+  bboxSource.value = sourceId
+  bboxLayer.value = layerId
+}
+
+const queryAthenaFires = async (
+  minLat: number,
+  maxLat: number,
+  minLon: number,
+  maxLon: number,
+) => {
+  if (!map.value) return
+
+  isLoadingAthena.value = true
+  try {
+    const response = await apiService.getFiresAthena({
+      min_lat: minLat,
+      max_lat: maxLat,
+      min_lon: minLon,
+      max_lon: maxLon,
+      limit: 1000,
+    })
+
+    athenaFires.value = response.data
+    console.log(`Loaded ${athenaFires.value.length} fires from Athena within bbox`)
+
+    // Display fires on map
+    displayAthenaFireMarkers()
+
+    // Fit map to show query results
+    if (athenaFires.value.length > 0) {
+      const bounds = new maplibregl.LngLatBounds()
+      athenaFires.value.forEach((fire: any) => {
+        if (fire.latitude && fire.longitude) {
+          bounds.extend([fire.longitude, fire.latitude])
+        }
+      })
+      map.value.fitBounds(bounds, { padding: 50, maxZoom: 12 })
+    }
+  } catch (error) {
+    console.error('Error querying Athena fires:', error)
+    alert(`Error querying fires: ${error}`)
+  } finally {
+    isLoadingAthena.value = false
+  }
+}
 
 const initMap = () => {
   if (!mapContainer.value) return
 
   map.value = new maplibregl.Map({
     container: mapContainer.value,
-    zoom: 2,
-    center: [0, 20],
+    zoom: 6,
+    center: [18.0686, 59.3293], // Stockholm, Sweden
     pitch: 0,
     hash: true,
     style: {
@@ -79,79 +312,166 @@ const initMap = () => {
   map.value.addControl(new maplibregl.ScaleControl(), 'bottom-left')
 
   // Load fire data after map is initialized
-  map.value.on('load', () => {
-    loadFireData()
+  map.value.on('load', async () => {
+    // Load default fires using Athena with wide bounding box (all Sweden)
+    try {
+      // Sweden bounding box
+      const defaultBbox = {
+        min_lat: 55.0,
+        max_lat: 69.0,
+        min_lon: 11.0,
+        max_lon: 24.0,
+        limit: 500,
+      }
+      const response = await apiService.getFiresAthena(defaultBbox)
+      athenaFires.value = response.data
+      currentBbox.value = {
+        min_lat: defaultBbox.min_lat,
+        max_lat: defaultBbox.max_lat,
+        min_lon: defaultBbox.min_lon,
+        max_lon: defaultBbox.max_lon,
+      }
+      console.log(`Loaded ${athenaFires.value.length} fire records from Athena`)
+      if (athenaFires.value.length > 0) {
+        displayAthenaFireMarkers()
+        // Fit map to show all markers
+        const bounds = new maplibregl.LngLatBounds()
+        athenaFires.value.forEach((fire: any) => {
+          if (fire.latitude && fire.longitude) {
+            bounds.extend([fire.longitude, fire.latitude])
+          }
+        })
+        map.value.fitBounds(bounds, { padding: 50, maxZoom: 10 })
+      }
+    } catch (err) {
+      console.warn('Could not fetch fires from Athena', err)
+      alert('Could not load fire data. Please ensure Athena endpoint is available.')
+    }
   })
+
+  // Add click handler for dropping fire starting points
+  map.value.on('click', handleMapClick)
 }
 
 const loadFireData = async () => {
-  if (!map.value) return
-
-  isLoadingFires.value = true
-  try {
-    const response = await apiService.getFires()
-    fires.value = response.data
-    console.log(`Loaded ${fires.value.length} fire records`)
-
-    if (fires.value.length === 0) {
-      console.warn('No fire data available. Run the seed script to populate the database.')
-      alert(
-        'No fire data found. Please run the seed script: python backend/scripts/seed_fire_occurrences.py',
-      )
-    } else {
-      displayFireMarkers()
-    }
-  } catch (error) {
-    console.error('Error loading fire data:', error)
-    alert(`Error loading fire data: ${error}. Please check that the backend is running.`)
-  } finally {
-    isLoadingFires.value = false
-  }
+  // Deprecated: Use Athena instead
+  console.warn('loadFireData deprecated, use Athena endpoint')
 }
 
 const displayFireMarkers = () => {
+  // Deprecated: Use displayAthenaFireMarkers instead
+  console.warn('displayFireMarkers deprecated, use displayAthenaFireMarkers instead')
+}
+
+// Build months array (YYYY-MM) between min and max inclusive
+const buildMonths = (minDateStr: string, maxDateStr: string) => {
+  // Deprecated: No longer used with Athena
+  console.warn('buildMonths deprecated')
+}
+
+const formatMonthLabel = (ym: string) => {
+  // Deprecated: No longer used with Athena
+  return ''
+}
+
+const loadFireDataForSelectedMonth = async () => {
+  // Deprecated: Use queryAthenaFires instead
+  console.warn('loadFireDataForSelectedMonth deprecated')
+}
+
+const prevMonth = async () => {
+  // Deprecated: Month slider no longer used
+  console.warn('prevMonth deprecated')
+}
+
+const nextMonth = async () => {
+  // Deprecated: Month slider no longer used
+  console.warn('nextMonth deprecated')
+
+const loadNO2Data = async () => {
   if (!map.value) return
 
-  // Clear existing markers
-  fireMarkers.value.forEach((marker) => marker.remove())
-  fireMarkers.value = []
+  isLoadingNO2.value = true
+  try {
+    const response = await apiService.getNO2({ limit: 100, min_qa: 0.5 })
+    no2Measurements.value = response.data
+    console.log(`Loaded ${no2Measurements.value.length} NO2 measurement records`)
 
-  // Add markers for each fire
-  fires.value.forEach((fire) => {
-    if (!fire.Lat_DD || !fire.Long_DD) return
+    if (no2Measurements.value.length === 0) {
+      console.warn('No NO2 data available. Run the seed script to populate the database.')
+    } else if (showNO2Layer.value) {
+      displayNO2Markers()
+    }
+  } catch (error) {
+    console.error('Error loading NO2 data:', error)
+  } finally {
+    isLoadingNO2.value = false
+  }
+}
 
-    // Create marker color based on cause
-    const color = fire.HumanOrLightning === 'Lightning' ? '#FFA500' : '#FF0000'
+const displayNO2Markers = () => {
+  if (!map.value) return
 
-    // Create popup content
+  // Clear existing NO2 markers
+  no2Markers.value.forEach((marker) => marker.remove())
+  no2Markers.value = []
+
+  if (!showNO2Layer.value) return
+
+  // Add markers for each NO2 measurement
+  no2Measurements.value.forEach((measurement) => {
+    if (!measurement.latitude || !measurement.longitude || !measurement.no2_column) return
+
+    // Color code based on NO2 concentration levels (molecules/cm²)
+    // Typical tropospheric NO2: 1e14 - 1e16 molecules/cm²
+    const no2Value = measurement.no2_column
+    let color = '#00FF00' // Green - low
+
+    if (no2Value > 1e16)
+      color = '#8B0000' // Dark red - very high
+    else if (no2Value > 5e15)
+      color = '#FF0000' // Red - high
+    else if (no2Value > 2e15)
+      color = '#FF6B00' // Orange - moderate-high
+    else if (no2Value > 1e15)
+      color = '#FFAA00' // Yellow - moderate
+    else if (no2Value > 5e14) color = '#90EE90' // Light green - low-moderate
+
+    // Create popup content with NO2 data
     const popupContent = `
       <div style="font-family: sans-serif;">
-        <h3 style="margin: 0 0 8px 0; font-size: 14px;">${fire.FireName || 'Unnamed Fire'}</h3>
-        <p style="margin: 4px 0; font-size: 12px;"><strong>Year:</strong> ${fire.FireYear}</p>
-        <p style="margin: 4px 0; font-size: 12px;"><strong>Acres:</strong> ${fire.EstTotalAcres?.toFixed(2) || 'N/A'}</p>
-        <p style="margin: 4px 0; font-size: 12px;"><strong>Cause:</strong> ${fire.HumanOrLightning || 'Unknown'}</p>
-        <p style="margin: 4px 0; font-size: 12px;"><strong>County:</strong> ${fire.County || 'N/A'}</p>
+        <h3 style="margin: 0 0 8px 0; font-size: 14px;">🌫️ NO2 Measurement</h3>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Date:</strong> ${measurement.measurement_date}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>NO2 Column:</strong> ${no2Value.toExponential(2)} mol/cm²</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Quality:</strong> ${measurement.qa_value ? (measurement.qa_value * 100).toFixed(1) + '%' : 'N/A'}</p>
+        <p style="margin: 4px 0; font-size: 12px;"><strong>Cloud Fraction:</strong> ${measurement.cloud_fraction ? (measurement.cloud_fraction * 100).toFixed(1) + '%' : 'N/A'}</p>
+        <p style="margin: 4px 0; font-size: 11px; color: #666;">Lat: ${measurement.latitude.toFixed(4)}, Lon: ${measurement.longitude.toFixed(4)}</p>
       </div>
     `
 
     // Create marker
     const marker = new maplibregl.Marker({ color, scale: 0.5 })
-      .setLngLat([fire.Long_DD, fire.Lat_DD])
+      .setLngLat([measurement.longitude, measurement.latitude])
       .setPopup(new maplibregl.Popup({ offset: 25 }).setHTML(popupContent))
       .addTo(map.value!)
 
-    fireMarkers.value.push(marker)
+    no2Markers.value.push(marker)
   })
+}
 
-  // Fit map to show all markers
-  if (fires.value.length > 0) {
-    const bounds = new maplibregl.LngLatBounds()
-    fires.value.forEach((fire) => {
-      if (fire.Lat_DD && fire.Long_DD) {
-        bounds.extend([fire.Long_DD, fire.Lat_DD])
-      }
-    })
-    map.value.fitBounds(bounds, { padding: 50, maxZoom: 10 })
+const toggleFireLayer = () => {
+  showFireLayer.value = !showFireLayer.value
+  displayFireMarkers()
+}
+
+const toggleNO2Layer = () => {
+  showNO2Layer.value = !showNO2Layer.value
+
+  if (showNO2Layer.value && no2Measurements.value.length === 0) {
+    // Load NO2 data if not already loaded
+    loadNO2Data()
+  } else {
+    displayNO2Markers()
   }
 }
 
@@ -235,6 +555,50 @@ const handleSearchInput = () => {
   }
 }
 
+const toggleMenu = () => {
+  isMenuOpen.value = !isMenuOpen.value
+}
+
+const toggleDropFireMode = () => {
+  isDropFireMode.value = !isDropFireMode.value
+
+  if (!isDropFireMode.value) {
+    // Remove the dropped fire marker when exiting drop mode
+    if (droppedFireMarker.value) {
+      droppedFireMarker.value.remove()
+      droppedFireMarker.value = null
+    }
+    droppedFireLocation.value = null
+
+    // Reset cursor
+    if (map.value) {
+      map.value.getCanvas().style.cursor = ''
+    }
+  } else {
+    // Change cursor to crosshair when in drop mode
+    if (map.value) {
+      map.value.getCanvas().style.cursor = 'crosshair'
+    }
+  }
+}
+
+const toggleBboxMode = () => {
+  isBboxMode.value = !isBboxMode.value
+
+  if (!isBboxMode.value) {
+    // Exit bbox mode
+    bboxStartPoint.value = null
+    if (map.value) {
+      map.value.getCanvas().style.cursor = ''
+    }
+  } else {
+    // Enter bbox mode
+    if (map.value) {
+      map.value.getCanvas().style.cursor = 'crosshair'
+    }
+  }
+}
+
 onMounted(() => {
   initMap()
 })
@@ -273,28 +637,79 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- Toggle Controls -->
-    <div class="toggle-controls">
-      <button @click="toggleProjection" class="toggle-button">
+    <!-- Hamburger Menu Button -->
+    <button @click="toggleMenu" class="hamburger-button" :class="{ open: isMenuOpen }">
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+      <span class="hamburger-line"></span>
+    </button>
+
+    <!-- Menu Panel -->
+    <div v-if="isMenuOpen" class="menu-panel">
+      <button @click="toggleProjection" class="menu-item">
         <span v-if="isGlobeView">🗺️ Flat Map</span>
         <span v-else>🌍 Globe View</span>
       </button>
 
-      <button @click="toggle3DTerrain" class="toggle-button">
+      <button @click="toggle3DTerrain" class="menu-item">
         <span v-if="is3DTerrain">📍 2D View</span>
         <span v-else>⛰️ 3D Terrain</span>
+      </button>
+
+      <button @click="toggleFireLayer" :class="['menu-item', { active: showFireLayer }]">
+        <span v-if="showFireLayer">🔥 Hide Fires</span>
+        <span v-else>🔥 Show Fires</span>
+      </button>
+
+      <button @click="toggleNO2Layer" :class="['menu-item', { active: showNO2Layer }]">
+        <span v-if="showNO2Layer">🌫️ Hide NO2</span>
+        <span v-else>🌫️ Show NO2</span>
+      </button>
+
+      <button @click="toggleDropFireMode" :class="['menu-item', { active: isDropFireMode }]">
+        <span v-if="isDropFireMode">✓ Drop Fire Mode</span>
+        <span v-else>🔥 Drop Fire</span>
+      </button>
+
+      <button @click="toggleBboxMode" :class="['menu-item', { active: isBboxMode }]">
+        <span v-if="isBboxMode">✓ Bbox Query Mode</span>
+        <span v-else>📦 Query by Bbox</span>
       </button>
     </div>
 
     <!-- Loading Indicator -->
-    <div v-if="isLoadingFires" class="loading-indicator">
+    <div v-if="isLoadingFires || isLoadingNO2" class="loading-indicator">
       <div class="spinner"></div>
-      <p>Loading fire data...</p>
+      <p v-if="isLoadingFires">Loading fire data...</p>
+      <p v-if="isLoadingNO2">Loading NO2 data...</p>
     </div>
 
-    <!-- Fire Stats -->
-    <div v-if="fires.length > 0" class="fire-stats">
-      <p>🔥 {{ fires.length.toLocaleString() }} fires loaded</p>
+    <!-- Data Stats -->
+    <div v-if="fires.length > 0 || no2Measurements.length > 0" class="data-stats">
+      <p v-if="fires.length > 0 && showFireLayer">🔥 {{ fires.length.toLocaleString() }} fires</p>
+      <p v-if="no2Measurements.length > 0 && showNO2Layer">
+        🌫️ {{ no2Measurements.length.toLocaleString() }} NO2 measurements
+      </p>
+    </div>
+
+    <!-- Athena Bbox Query Info -->
+    <div v-if="currentBbox && athenaFires.length > 0" class="bbox-info">
+      <p style="margin: 0 0 8px 0; font-weight: 600;">📦 Bbox Query Results</p>
+      <p style="margin: 2px 0; font-size: 12px;">🔥 {{ athenaFires.length.toLocaleString() }} fires found</p>
+      <p style="margin: 2px 0; font-size: 11px; color: #666;">
+        Lat: {{ currentBbox.min_lat.toFixed(2) }} to {{ currentBbox.max_lat.toFixed(2) }}
+      </p>
+      <p style="margin: 2px 0; font-size: 11px; color: #666;">
+        Lon: {{ currentBbox.min_lon.toFixed(2) }} to {{ currentBbox.max_lon.toFixed(2) }}
+      </p>
+    </div>
+
+    <!-- Bbox Mode Hint -->
+    <div v-if="isBboxMode && !bboxStartPoint" class="bbox-hint">
+      Click on map to set first corner of bounding box
+    </div>
+    <div v-else-if="isBboxMode && bboxStartPoint" class="bbox-hint">
+      Click again to set second corner and query fires
     </div>
   </div>
 </template>
@@ -392,42 +807,110 @@ onBeforeUnmount(() => {
   background: #f8f8f8;
 }
 
-/* Toggle Controls */
-.toggle-controls {
+/* Hamburger Menu Button */
+.hamburger-button {
   position: absolute;
   bottom: 100px;
   left: 20px;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.toggle-button {
+  z-index: 3;
   background: white;
   border: none;
   border-radius: 8px;
-  padding: 12px 20px;
-  font-size: 16px;
-  font-weight: 500;
+  width: 50px;
+  height: 50px;
   cursor: pointer;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   transition: all 0.2s ease;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  white-space: nowrap;
+  justify-content: center;
+  gap: 5px;
+  padding: 0;
 }
 
-.toggle-button:hover {
+.hamburger-button:hover {
   background: #f0f0f0;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
   transform: translateY(-1px);
 }
 
-.toggle-button:active {
-  transform: translateY(0);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+.hamburger-line {
+  width: 24px;
+  height: 3px;
+  background: #333;
+  border-radius: 2px;
+  transition: all 0.3s ease;
+}
+
+.hamburger-button.open .hamburger-line:nth-child(1) {
+  transform: translateY(8px) rotate(45deg);
+}
+
+.hamburger-button.open .hamburger-line:nth-child(2) {
+  opacity: 0;
+}
+
+.hamburger-button.open .hamburger-line:nth-child(3) {
+  transform: translateY(-8px) rotate(-45deg);
+}
+
+/* Menu Panel */
+.menu-panel {
+  position: absolute;
+  bottom: 100px;
+  left: 80px;
+  z-index: 2;
+  background: white;
+  border-radius: 8px;
+  padding: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+  animation: slideIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.menu-item {
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+  text-align: left;
+  color: #333;
+}
+
+.menu-item:hover {
+  background: #f0f0f0;
+}
+
+.menu-item.active {
+  background: #ff6b35;
+  color: white;
+}
+
+.menu-item.active:hover {
+  background: #ff5722;
 }
 
 /* Responsive adjustments */
@@ -437,20 +920,19 @@ onBeforeUnmount(() => {
     max-width: none;
   }
 
-  .toggle-controls {
+  .hamburger-button {
     bottom: 20px;
-    left: 50%;
-    transform: translateX(-50%);
-    flex-direction: row;
-    width: calc(100% - 40px);
-    justify-content: center;
+    left: 20px;
   }
 
-  .toggle-button {
-    flex: 1;
-    justify-content: center;
+  .menu-panel {
+    bottom: 20px;
+    left: 80px;
+  }
+
+  .menu-item {
     font-size: 14px;
-    padding: 10px 16px;
+    padding: 10px 14px;
   }
 }
 
@@ -489,14 +971,13 @@ onBeforeUnmount(() => {
   }
 }
 
-/* Fire Stats */
-.fire-stats {
+/* Data Stats */
+.data-stats {
   position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
+  top: 80px;
+  left: 20px;
   background: white;
-  padding: 12px 24px;
+  padding: 12px 20px;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
   z-index: 1;
@@ -504,7 +985,39 @@ onBeforeUnmount(() => {
   color: #333;
 }
 
-.fire-stats p {
-  margin: 0;
+.data-stats p {
+  margin: 4px 0;
+  font-size: 14px;
+}
+
+/* Bbox Info */
+.bbox-info {
+  position: absolute;
+  top: 80px;
+  right: 20px;
+  background: white;
+  padding: 12px 16px;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  z-index: 1;
+  color: #333;
+  border-left: 4px solid #088;
+}
+
+/* Bbox Mode Hint */
+.bbox-hint {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: white;
+  padding: 16px 24px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  z-index: 2;
+  font-weight: 600;
+  color: #088;
+  text-align: center;
+  border: 2px dashed #088;
 }
 </style>
