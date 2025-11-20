@@ -1,45 +1,41 @@
 #!/bin/bash
 
-# Helper script to run Docker with AWS credentials from the khaled profile
+# Helper script to run Docker with AWS credentials from .env file
 # Usage: ./run-with-aws.sh
 
 set -e
 
-echo "🔑 Loading AWS credentials from profile 'khaled'..."
+echo "🔑 Loading AWS credentials from backend/.env file..."
 
-# Extract credentials from AWS CLI profile
-AWS_PROFILE_NAME="khaled"
-
-# Read credentials from AWS CLI config
-if [ ! -f ~/.aws/credentials ]; then
-    echo "❌ Error: ~/.aws/credentials file not found"
-    echo "Please run 'aws configure' first"
+# Check if .env file exists
+if [ ! -f backend/.env ]; then
+    echo "❌ Error: backend/.env file not found"
+    echo "Please create backend/.env with AWS credentials"
     exit 1
 fi
 
-# Extract credentials for the profile
-export AWS_ACCESS_KEY_ID=$(aws configure get aws_access_key_id --profile $AWS_PROFILE_NAME)
-export AWS_SECRET_ACCESS_KEY=$(aws configure get aws_secret_access_key --profile $AWS_PROFILE_NAME)
-export AWS_SESSION_TOKEN=$(aws configure get aws_session_token --profile $AWS_PROFILE_NAME 2>/dev/null || echo "")
-export AWS_DEFAULT_REGION=$(aws configure get region --profile $AWS_PROFILE_NAME || echo "us-east-1")
+# Load environment variables from .env file
+export $(grep -v '^#' backend/.env | grep -v '^$' | xargs)
 
 # Verify credentials are loaded
 if [ -z "$AWS_ACCESS_KEY_ID" ]; then
-    echo "❌ Error: Could not load AWS_ACCESS_KEY_ID from profile '$AWS_PROFILE_NAME'"
+    echo "❌ Error: AWS_ACCESS_KEY_ID not found in backend/.env"
     exit 1
 fi
 
 if [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
-    echo "❌ Error: Could not load AWS_SECRET_ACCESS_KEY from profile '$AWS_PROFILE_NAME'"
+    echo "❌ Error: AWS_SECRET_ACCESS_KEY not found in backend/.env"
     exit 1
+fi
+
+# Set default region if not in .env
+if [ -z "$AWS_DEFAULT_REGION" ]; then
+    export AWS_DEFAULT_REGION="eu-central-1"
 fi
 
 echo "✅ AWS credentials loaded successfully"
 echo "   Region: $AWS_DEFAULT_REGION"
 echo "   Access Key: ${AWS_ACCESS_KEY_ID:0:8}..."
-if [ -n "$AWS_SESSION_TOKEN" ]; then
-    echo "   Session Token: Found (temporary credentials)"
-fi
 
 # Run docker compose with credentials
 echo ""

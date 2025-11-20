@@ -95,6 +95,10 @@ class AthenaClient:
             status = response['QueryExecution']['Status']['State']
 
             if status in ['SUCCEEDED', 'FAILED', 'CANCELLED']:
+                # Log failure details if query failed
+                if status == 'FAILED':
+                    state_change_reason = response['QueryExecution']['Status'].get('StateChangeReason', 'Unknown reason')
+                    logger.error(f"Query failed. Reason: {state_change_reason}")
                 return status
 
             if time.time() - start_time > max_wait_seconds:
@@ -161,9 +165,9 @@ class AthenaClient:
 
         return results
 
-    def query_wildfire_by_bbox(self, min_lat, max_lat, min_lon, max_lon, limit=1000):
+    def query_wildfire_by_bbox(self, min_lat, max_lat, min_lon, max_lon, limit=1000, start_date=None, end_date=None):
         """
-        Query wildfire data by bounding box
+        Query wildfire data by bounding box and optional date range
 
         Args:
             min_lat: Minimum latitude
@@ -171,10 +175,40 @@ class AthenaClient:
             min_lon: Minimum longitude
             max_lon: Maximum longitude
             limit: Maximum number of results to return
+            start_date: Start date (YYYY-MM-DD format, optional)
+            end_date: End date (YYYY-MM-DD format, optional)
 
         Returns:
             List of wildfire records
         """
+        # Build WHERE clause with spatial bounds
+        # Cast latitude/longitude to DOUBLE for proper numeric comparison
+        where_clauses = [
+            f"CAST(latitude AS DOUBLE) BETWEEN {min_lat} AND {max_lat}",
+            f"CAST(longitude AS DOUBLE) BETWEEN {min_lon} AND {max_lon}"
+        ]
+        
+        # Add date filters if provided using year/month columns
+        # Try treating year and month as integers
+        if start_date and end_date:
+            # Parse dates to extract year, month as integers
+            start_parts = start_date.split('-')
+            start_year = int(start_parts[0])
+            start_month = int(start_parts[1])
+            
+            end_parts = end_date.split('-')
+            end_year = int(end_parts[0])
+            end_month = int(end_parts[1])
+            
+            # For same year and month, just filter by that month
+            if start_year == end_year and start_month == end_month:
+                where_clauses.append(f"(CAST(year AS INTEGER) = {start_year} AND CAST(month AS INTEGER) = {start_month})")
+            else:
+                # For different months/years
+                where_clauses.append(f"CAST(year AS INTEGER) = {start_year} AND CAST(month AS INTEGER) = {start_month}")
+        
+        where_clause = " AND ".join(where_clauses)
+        
         query = f"""
         SELECT 
             latitude, longitude, acq_date, acq_time, 
@@ -182,8 +216,7 @@ class AthenaClient:
             instrument, satellite, version, daynight, 
             type, scan, track, year, month, day
         FROM wild_fire
-        WHERE latitude BETWEEN {min_lat} AND {max_lat}
-          AND longitude BETWEEN {min_lon} AND {max_lon}
+        WHERE {where_clause}
         LIMIT {limit}
         """
 
