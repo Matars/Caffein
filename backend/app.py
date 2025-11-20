@@ -8,6 +8,8 @@ from sqlalchemy import func
 from logger import get_logger
 from athena_client import get_athena_client
 import atexit
+import math
+import random
 
 # Load environment variables
 load_dotenv()
@@ -16,7 +18,8 @@ load_dotenv()
 logger = get_logger('api')
 
 app = Flask(__name__)
-CORS(app)
+# Enable CORS for all domains on all routes
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Initialize PostgreSQL connection asynchronously (non-blocking)
 logger.info("Starting Flask server...")
@@ -200,6 +203,7 @@ def get_fires_athena():
     - limit: Maximum number of results (default: 1000)
     - start_date: Start date (YYYY-MM-DD format, optional)
     - end_date: End date (YYYY-MM-DD format, optional)
+    - min_frp: Minimum Fire Radiative Power (optional)
     """
     try:
         # Get bounding box parameters (default to Sweden)
@@ -210,6 +214,7 @@ def get_fires_athena():
         limit = request.args.get('limit', 1000, type=int)
         start_date = request.args.get('start_date', type=str)
         end_date = request.args.get('end_date', type=str)
+        min_frp = request.args.get('min_frp', type=float)
 
         # Validate inputs
         if min_lat >= max_lat:
@@ -227,7 +232,7 @@ def get_fires_athena():
         logger.info(
             f"Querying Athena for wildfires: "
             f"lat=[{min_lat}, {max_lat}], lon=[{min_lon}, {max_lon}], "
-            f"dates=[{start_date}, {end_date}], limit={limit}"
+            f"dates=[{start_date}, {end_date}], limit={limit}, min_frp={min_frp}"
         )
 
         # Query Athena
@@ -239,7 +244,8 @@ def get_fires_athena():
             max_lon=max_lon,
             limit=limit,
             start_date=start_date,
-            end_date=end_date
+            end_date=end_date,
+            min_frp=min_frp
         )
 
         logger.info(f"Athena query returned {len(results)} records")
@@ -351,6 +357,154 @@ def get_no2_measurements():
             'error': str(e),
             'status': 'error'
         }), 500
+
+
+@app.route('/api/simulate-fire', methods=['POST'])
+def simulate_fire():
+    """
+    Simulate fire impact and pollutant spread
+    
+    Expected JSON body:
+    - latitude: float
+    - longitude: float
+    - frp: float (Fire Radiative Power)
+    - pollutants: list[str] (e.g. ['CO', 'NO2', 'CH4'])
+    """
+    try:
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided', 'status': 'error'}), 400
+            
+        lat = data.get('latitude')
+        lon = data.get('longitude')
+        frp = data.get('frp', 100.0)
+        pollutants = data.get('pollutants', ['CO', 'NO2'])
+        
+        if lat is None or lon is None:
+            return jsonify({'error': 'Latitude and longitude are required', 'status': 'error'}), 400
+            
+        # Simulation parameters
+        # Grid size (degrees)
+        grid_radius = 0.5  # approx 50km
+        grid_steps = 20
+        step_size = (grid_radius * 2) / grid_steps
+        
+        grid_data = []
+        
+        # Wind parameters (randomized for now, could be inputs)
+        wind_speed = random.uniform(5, 15)  # km/h
+        wind_dir = random.uniform(0, 360)  # degrees
+        wind_rad = math.radians(wind_dir)
+        
+        # Generate grid points
+        for i in range(grid_steps):
+            for j in range(grid_steps):
+                # Calculate point coordinates
+                p_lat = (lat - grid_radius) + (i * step_size)
+                p_lon = (lon - grid_radius) + (j * step_size)
+                
+                # Calculate distance from fire (approximate)
+                # 1 deg lat approx 111km
+                dy = (p_lat - lat) * 111.0
+                dx = (p_lon - lon) * 111.0 * math.cos(math.radians(lat))
+                dist = math.sqrt(dx*dx + dy*dy)
+                
+                # Calculate angle for wind effect
+                angle = math.atan2(dy, dx)
+                angle_diff = abs(angle - wind_rad)
+                while angle_diff > math.pi:
+                    angle_diff -= 2 * math.pi
+                angle_diff = abs(angle_diff)
+                
+                # Wind factor: higher concentration downwind
+                # Gaussian distribution along wind direction
+                wind_factor = math.exp(-(angle_diff * angle_diff) / (2 * 0.5 * 0.5))
+                if dist > 0:
+                    wind_factor *= (1 + wind_speed/10.0)
+                
+                # Base concentration based on FRP and distance
+                # Decay with distance (Gaussian plume model simplified)
+                if dist < 0.5:
+                    concentration = frp  # At source
+                else:
+                    # Dispersion
+                    concentration = (frp / (dist * dist + 1)) * (0.5 + 0.5 * wind_factor)
+                
+                # Add some noise
+                concentration *= random.uniform(0.8, 1.2)
+                
+                point_data = {
+                    'latitude': p_lat,
+                    'longitude': p_lon,
+                    'distance': dist
+                }
+                
+                # Calculate specific pollutants
+                # Ratios relative to generic concentration (arbitrary for simulation)
+                ratios = {
+                    'CO': 1.0,
+                    'NO2': 0.1,
+                    'CH4': 0.05,
+                    'HCHO': 0.02,
+                    'SO2': 0.01,
+                    'AAI': 0.5
+                }
+                
+                for p in pollutants:
+                    ratio = ratios.get(p, 0.1)
+                    point_data[p] = concentration * ratio
+                
+                # Only include points with significant concentration
+                if concentration > 0.1:
+                    grid_data.append(point_data)
+        
+        # Calculate summary statistics
+        max_dist = 0
+        pollutant_stats = {p: {'max': 0.0, 'sum': 0.0, 'count': 0} for p in pollutants}
+        
+        for point in grid_data:
+            if point['distance'] > max_dist:
+                max_dist = point['distance']
+            
+            for p in pollutants:
+                if p in point:
+                    val = point[p]
+                    if val > pollutant_stats[p]['max']:
+                        pollutant_stats[p]['max'] = val
+                    pollutant_stats[p]['sum'] += val
+                    pollutant_stats[p]['count'] += 1
+        
+        pollutant_peaks = {}
+        for p, stats in pollutant_stats.items():
+            if stats['count'] > 0:
+                pollutant_peaks[p] = {
+                    'max': stats['max'],
+                    'mean': stats['sum'] / stats['count']
+                }
+            else:
+                pollutant_peaks[p] = {'max': 0, 'mean': 0}
+
+        return jsonify({
+            'status': 'success',
+            'grid_data': grid_data,
+            'summary': {
+                'fire_location': {'lat': lat, 'lon': lon},
+                'fire_intensity': frp,
+                'grid_points': len(grid_data),
+                'max_distance_km': max_dist,
+                'pollutant_peaks': pollutant_peaks
+            },
+            'metadata': {
+                'wind_speed': wind_speed,
+                'wind_direction': wind_dir,
+                'frp': frp
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in simulation: {str(e)}")
+        return jsonify({'error': str(e), 'status': 'error'}), 500
 
 
 if __name__ == '__main__':

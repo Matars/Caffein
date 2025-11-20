@@ -165,7 +165,7 @@ class AthenaClient:
 
         return results
 
-    def query_wildfire_by_bbox(self, min_lat, max_lat, min_lon, max_lon, limit=1000, start_date=None, end_date=None):
+    def query_wildfire_by_bbox(self, min_lat, max_lat, min_lon, max_lon, limit=1000, start_date=None, end_date=None, min_frp=None):
         """
         Query wildfire data by bounding box and optional date range
 
@@ -177,6 +177,7 @@ class AthenaClient:
             limit: Maximum number of results to return
             start_date: Start date (YYYY-MM-DD format, optional)
             end_date: End date (YYYY-MM-DD format, optional)
+            min_frp: Minimum Fire Radiative Power (optional)
 
         Returns:
             List of wildfire records
@@ -188,24 +189,13 @@ class AthenaClient:
             f"CAST(longitude AS DOUBLE) BETWEEN {min_lon} AND {max_lon}"
         ]
         
-        # Add date filters if provided using year/month columns
-        # Try treating year and month as integers
+        # Add FRP filter if provided
+        if min_frp is not None:
+            where_clauses.append(f"CAST(frp AS DOUBLE) >= {min_frp}")
+        
+        # Add date filters if provided
         if start_date and end_date:
-            # Parse dates to extract year, month as integers
-            start_parts = start_date.split('-')
-            start_year = int(start_parts[0])
-            start_month = int(start_parts[1])
-            
-            end_parts = end_date.split('-')
-            end_year = int(end_parts[0])
-            end_month = int(end_parts[1])
-            
-            # For same year and month, just filter by that month
-            if start_year == end_year and start_month == end_month:
-                where_clauses.append(f"(CAST(year AS INTEGER) = {start_year} AND CAST(month AS INTEGER) = {start_month})")
-            else:
-                # For different months/years
-                where_clauses.append(f"CAST(year AS INTEGER) = {start_year} AND CAST(month AS INTEGER) = {start_month}")
+            where_clauses.append(f"acq_date >= CAST('{start_date}' AS DATE) AND acq_date <= CAST('{end_date}' AS DATE)")
         
         where_clause = " AND ".join(where_clauses)
         

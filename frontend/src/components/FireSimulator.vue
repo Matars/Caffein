@@ -46,6 +46,29 @@
         </div>
 
         <div class="control-group">
+          <label>Region Selection:</label>
+          <div class="bbox-controls">
+            <button 
+              @click="toggleBboxMode" 
+              :class="['btn-secondary', { active: isBboxMode }]"
+            >
+              {{ isBboxMode ? (bboxStartPoint ? '📍 Click 2nd Corner' : '📍 Click 1st Corner') : '🗺️ Select Region' }}
+            </button>
+            <button 
+              v-if="currentBbox" 
+              @click="clearBbox" 
+              class="btn-icon"
+              title="Clear Region"
+            >
+              ❌
+            </button>
+          </div>
+          <small v-if="currentBbox" class="bbox-status">
+            Region: {{ currentBbox.min_lat.toFixed(1) }}, {{ currentBbox.min_lon.toFixed(1) }} to {{ currentBbox.max_lat.toFixed(1) }}, {{ currentBbox.max_lon.toFixed(1) }}
+          </small>
+        </div>
+
+        <div class="control-group">
           <label for="min-frp">Minimum FRP (Fire Intensity):</label>
           <input 
             type="number" 
@@ -188,7 +211,7 @@ import 'leaflet/dist/leaflet.css'
 import 'leaflet.heat'
 import axios from 'axios'
 
-const API_BASE_URL = 'http://localhost:5000/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
 
 // State - Map
 const mapContainer = ref<HTMLElement | null>(null)
@@ -203,9 +226,13 @@ const currentMode = ref<'view' | 'simulation'>('view')
 // State - View Mode
 const viewStartDate = ref('2024-01-01')
 const viewEndDate = ref('2024-12-31')
-const minFrpFilter = ref(100)
+const minFrpFilter = ref(0)
 const historicalFires = ref<any[]>([])
 const loadingFires = ref(false)
+const isBboxMode = ref(false)
+const bboxStartPoint = ref<L.LatLng | null>(null)
+let bboxLayer: L.Rectangle | null = null
+const currentBbox = ref<{ min_lat: number; max_lat: number; min_lon: number; max_lon: number } | null>(null)
 
 // State - Simulation Mode
 const frp = ref(150)
@@ -239,6 +266,39 @@ function switchMode(mode: 'view' | 'simulation') {
   // Clear everything when switching modes
   clearHistoricalFires()
   clearSimulation()
+  clearBbox()
+}
+
+// Toggle BBox Mode
+function toggleBboxMode() {
+  isBboxMode.value = !isBboxMode.value
+  bboxStartPoint.value = null
+  if (!isBboxMode.value) {
+    // Cancelled, maybe clear existing bbox? No, keep it if it exists.
+  }
+}
+
+// Clear BBox
+function clearBbox() {
+  if (bboxLayer && map) {
+    map.removeLayer(bboxLayer)
+    bboxLayer = null
+  }
+  currentBbox.value = null
+  bboxStartPoint.value = null
+  isBboxMode.value = false
+}
+
+// Draw Bounding Box
+function drawBoundingBox(bounds: L.LatLngBounds) {
+  if (!map) return
+  if (bboxLayer) map.removeLayer(bboxLayer)
+  
+  bboxLayer = L.rectangle(bounds, {
+    color: "#3388ff", 
+    weight: 2,
+    fillOpacity: 0.1
+  }).addTo(map)
 }
 
 // Load historical fires from CSV
@@ -247,14 +307,23 @@ async function loadHistoricalFires() {
   error.value = ''
   
   try {
-    // Read the combined-countries.csv file
-    const response = await axios.get(`${API_BASE_URL}/fires-csv`, {
-      params: {
-        start_date: viewStartDate.value,
-        end_date: viewEndDate.value,
-        min_frp: minFrpFilter.value
-      }
-    })
+    // Query Athena for fire data
+    const params: any = {
+      start_date: viewStartDate.value,
+      end_date: viewEndDate.value,
+      min_frp: minFrpFilter.value,
+      limit: 2000 // Increase limit to see more fires
+    }
+    
+    // Add bbox if selected
+    if (currentBbox.value) {
+      params.min_lat = currentBbox.value.min_lat
+      params.max_lat = currentBbox.value.max_lat
+      params.min_lon = currentBbox.value.min_lon
+      params.max_lon = currentBbox.value.max_lon
+    }
+
+    const response = await axios.get(`${API_BASE_URL}/fires/athena`, { params })
     
     historicalFires.value = response.data.data || []
     
@@ -342,6 +411,34 @@ function clearHistoricalFires() {
 
 // Handle map click
 async function handleMapClick(e: L.LeafletMouseEvent) {
+  // Handle View Mode - BBox Selection
+  if (currentMode.value === 'view') {
+    if (isBboxMode.value) {
+      if (!bboxStartPoint.value) {
+        // First click
+        bboxStartPoint.value = e.latlng
+      } else {
+        // Second click
+        const bounds = L.latLngBounds(bboxStartPoint.value, e.latlng)
+        drawBoundingBox(bounds)
+        
+        currentBbox.value = {
+          min_lat: bounds.getSouth(),
+          max_lat: bounds.getNorth(),
+          min_lon: bounds.getWest(),
+          max_lon: bounds.getEast()
+        }
+        
+        bboxStartPoint.value = null
+        isBboxMode.value = false
+        
+        // Auto-load fires for this region
+        loadHistoricalFires()
+      }
+    }
+    return
+  }
+
   // Only handle clicks in simulation mode
   if (currentMode.value !== 'simulation') return
   
@@ -530,6 +627,53 @@ watch(frp, async () => {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+}
+
+.btn-secondary {
+  width: 100%;
+  padding: 10px;
+  background: #f0f0f0;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  color: #333;
+  transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+  background: #e0e0e0;
+}
+
+.btn-secondary.active {
+  background: #3388ff;
+  color: white;
+  border-color: #3388ff;
+}
+
+.bbox-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-icon {
+  padding: 10px;
+  background: #fff0f0;
+  border: 1px solid #ffcccc;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-icon:hover {
+  background: #ffe0e0;
+}
+
+.bbox-status {
+  display: block;
+  margin-top: 5px;
+  color: #666;
+  font-size: 11px;
 }
 
 .mode-content {

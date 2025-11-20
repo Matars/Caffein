@@ -29,7 +29,7 @@ services:
     container_name: projectvis-backend
     restart: unless-stopped
     ports:
-      - "5001:5001"
+      - "5001:5000"
     environment:
       - FLASK_ENV=development
       - DB_HOST=postgres
