@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import MapView from './components/MapView.vue'
+import FireSimulator from './components/FireSimulator.vue'
 </script>
 
 <template>
   <div class="app">
-    <MapView />
+    <FireSimulator />
   </div>
 </template>
 

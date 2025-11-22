@@ -11,3 +11,10 @@ folium
 boto3
 prophet
 scikit-learn
+plotly
+sqlalchemy
+psycopg2-binary
+ijson
+boto3
+prophet
+scikit-learn

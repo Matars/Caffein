@@ -1,12 +1,14 @@
 """
-MongoDB connection module with async initialization
+PostgreSQL connection module with SQLAlchemy
 """
-from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 import os
 from dotenv import load_dotenv
 import threading
 from logger import get_logger
+from models import Base
 
 # Load environment variables
 load_dotenv()
@@ -14,13 +16,19 @@ load_dotenv()
 # Initialize logger
 logger = get_logger('database')
 
-# MongoDB configuration
-MONGO_URI = os.getenv('MONGO_DB_URI', 'mongodb://localhost:27017/')
-DATABASE_NAME = os.getenv('DATABASE_NAME', 'projectvis_db')
+# PostgreSQL configuration
+DB_HOST = os.getenv('DB_HOST', 'localhost')
+DB_PORT = os.getenv('DB_PORT', '5432')
+DB_NAME = os.getenv('DB_NAME', 'caffein')
+DB_USER = os.getenv('DB_USER', 'postgres')
+DB_PASSWORD = os.getenv('DB_PASSWORD', '')
+
+# Construct database URL
+DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 # Global variables
-client = None
-db = None
+engine = None
+SessionLocal = None
 connection_status = {
     'connected': False,
     'error': None,
@@ -29,8 +37,8 @@ connection_status = {
 
 
 def init_db():
-    """Initialize MongoDB connection asynchronously"""
-    global client, db, connection_status
+    """Initialize PostgreSQL connection asynchronously"""
+    global engine, SessionLocal, connection_status
 
     if connection_status['attempting']:
         return
@@ -38,37 +46,46 @@ def init_db():
     connection_status['attempting'] = True
 
     def connect():
-        global client, db, connection_status
+        global engine, SessionLocal, connection_status
         try:
-            logger.info(f"Attempting to connect to MongoDB at {MONGO_URI}")
-            # Set a timeout so it doesn't hang
-            temp_client = MongoClient(
-                MONGO_URI,
-                serverSelectionTimeoutMS=5000,  # 5 second timeout
-                connectTimeoutMS=5000
+            logger.info(f"Attempting to connect to PostgreSQL at {DB_HOST}:{DB_PORT}/{DB_NAME}")
+
+            # Create engine with connection pool settings
+            temp_engine = create_engine(
+                DATABASE_URL,
+                pool_size=5,
+                max_overflow=10,
+                pool_timeout=30,
+                pool_pre_ping=True,  # Verify connections before using
+                connect_args={'connect_timeout': 5}
             )
 
             # Test the connection
-            temp_client.admin.command('ping')
+            with temp_engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
 
             # If successful, set global variables
-            client = temp_client
-            db = client[DATABASE_NAME]
+            engine = temp_engine
+            SessionLocal = scoped_session(sessionmaker(
+                autocommit=False,
+                autoflush=False,
+                bind=engine
+            ))
+
             connection_status['connected'] = True
             connection_status['error'] = None
-            logger.info(
-                f"✓ MongoDB connection successful! Database: {DATABASE_NAME}")
+            logger.info(f"✓ PostgreSQL connection successful! Database: {DB_NAME}")
 
-        except (ConnectionFailure, ServerSelectionTimeoutError) as e:
+        except OperationalError as e:
             connection_status['connected'] = False
-            connection_status['error'] = f"Connection timeout: {str(e)}"
-            logger.warning(f"MongoDB connection failed: {str(e)}")
+            connection_status['error'] = f"Connection failed: {str(e)}"
+            logger.warning(f"PostgreSQL connection failed: {str(e)}")
             logger.info("Server will continue without database connection")
 
         except Exception as e:
             connection_status['connected'] = False
             connection_status['error'] = str(e)
-            logger.error(f"MongoDB connection error: {str(e)}")
+            logger.error(f"PostgreSQL connection error: {str(e)}")
             logger.info("Server will continue without database connection")
 
         finally:
@@ -80,8 +97,10 @@ def init_db():
 
 
 def get_db():
-    """Get the database instance"""
-    return db
+    """Get a database session"""
+    if SessionLocal is None:
+        return None
+    return SessionLocal()
 
 
 def get_connection_status():
@@ -95,12 +114,12 @@ def get_connection_status():
 
 def close_db():
     """Close the database connection"""
-    global client, db, connection_status
-    if client:
-        client.close()
-        client = None
-        db = None
+    global engine, SessionLocal, connection_status
+    if SessionLocal:
+        SessionLocal.remove()
+    if engine:
+        engine.dispose()
+        engine = None
+        SessionLocal = None
         connection_status['connected'] = False
-        logger.info("MongoDB connection closed")
-        connection_status['connected'] = False
-        print("MongoDB connection closed")
+        logger.info("PostgreSQL connection closed")

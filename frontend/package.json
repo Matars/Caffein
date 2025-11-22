@@ -15,6 +15,10 @@
         "format": "prettier --write src/"
     },
     "dependencies": {
+        "@vuepic/vue-datepicker": "^11.0.3",
+        "axios": "^1.13.2",
+        "leaflet": "^1.9.4",
+        "leaflet.heat": "^0.2.0",
         "maplibre-gl": "^5.8.0",
         "pinia": "^3.0.3",
         "vue": "^3.5.18",
@@ -22,6 +26,7 @@
     },
     "devDependencies": {
         "@tsconfig/node22": "^22.0.2",
+        "@types/leaflet": "^1.9.8",
         "@types/node": "^22.16.5",
         "@vitejs/plugin-vue": "^6.0.1",
         "@vitejs/plugin-vue-jsx": "^5.0.1",
