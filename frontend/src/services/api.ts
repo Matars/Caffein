@@ -56,6 +56,8 @@ export interface NO2Measurement {
   cloud_fraction?: number // Cloud fraction (0-1)
   grid_lat_idx?: number
   grid_lon_idx?: number
+  value: number
+  unit: string
 }
 
 export interface NO2Response {
@@ -63,7 +65,44 @@ export interface NO2Response {
   count: number
   status: string
   error?: string
-  message?: string
+}
+
+export interface WeatherData {
+  wind_speed: number
+  wind_deg: number
+  temp: number
+  humidity: number
+  rain?: number
+}
+
+export interface WeatherResponse {
+  status: string
+  data: WeatherData
+  error?: string
+}
+
+export interface PollutionData {
+  dt: number
+  main: {
+    aqi: number
+  }
+  components: {
+    co: number
+    no: number
+    no2: number
+    o3: number
+    so2: number
+    pm2_5: number
+    pm10: number
+    nh3: number
+  }
+}
+
+export interface PollutionResponse {
+  status: string
+  data: PollutionData[]
+  error?: string
+  is_mock?: boolean
 }
 
 export const apiService = {
@@ -185,6 +224,40 @@ export const apiService = {
       return await response.json()
     } catch (error) {
       console.error('Error fetching NO2 data:', error)
+      throw error
+    }
+  },
+
+  async getWeather(lat: number, lon: number, date?: number): Promise<WeatherResponse> {
+    try {
+      let url = `${API_BASE_URL}/weather?lat=${lat}&lon=${lon}`
+      if (date) {
+        url += `&date=${date}`
+      }
+      const response = await fetch(url)
+      return await response.json()
+    } catch (error) {
+      console.error('Error fetching weather:', error)
+      return { status: 'error', error: String(error), data: { wind_speed: 0, wind_deg: 0, temp: 0, humidity: 0, rain: 0 } }
+    }
+  },
+
+  async getPollution(lat: number, lon: number, date?: number): Promise<PollutionResponse> {
+    try {
+      const url = new URL(`${API_BASE_URL}/pollution`)
+      url.searchParams.append('lat', lat.toString())
+      url.searchParams.append('lon', lon.toString())
+      if (date) {
+        url.searchParams.append('date', date.toString())
+      }
+      
+      const response = await fetch(url.toString())
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Error fetching pollution data:', error)
       throw error
     }
   },

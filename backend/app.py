@@ -10,6 +10,8 @@ from athena_client import get_athena_client
 import atexit
 import math
 import random
+import requests
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -505,6 +507,196 @@ def simulate_fire():
     except Exception as e:
         logger.error(f"Error in simulation: {str(e)}")
         return jsonify({'error': str(e), 'status': 'error'}), 500
+
+
+@app.route('/api/weather', methods=['GET'])
+def get_weather():
+    """Get weather data from OpenWeather API"""
+    lat = request.args.get('lat')
+    lon = request.args.get('lon')
+    date = request.args.get('date') # Unix timestamp
+
+    if not lat or not lon:
+        return jsonify({'error': 'Missing lat or lon parameter'}), 400
+    
+    api_key = os.getenv('OPENWEATHER_API_KEY')
+    if not api_key:
+        logger.error("OPENWEATHER_API_KEY not found in environment variables")
+        return jsonify({'error': 'Server configuration error'}), 500
+
+    try:
+        if date:
+            # Historical data using History API 2.5
+            url = "https://history.openweathermap.org/data/2.5/history/city"
+            params = {
+                'lat': lat,
+                'lon': lon,
+                'type': 'hour',
+                'start': date,
+                'cnt': 24, # Get 24 hours of data
+                'appid': api_key,
+                'units': 'metric'
+            }
+        else:
+            # Current weather using Weather API 2.5
+            url = "https://api.openweathermap.org/data/2.5/weather"
+            params = {
+                'lat': lat,
+                'lon': lon,
+                'appid': api_key,
+                'units': 'metric'
+            }
+        
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            result = {}
+            if date:
+                 # Parse history response (list of hours)
+                 # Find the hour with max wind speed to represent the day's worst case for fire
+                 if 'list' in data and len(data['list']) > 0:
+                     max_wind_entry = max(data['list'], key=lambda x: x.get('wind', {}).get('speed', 0))
+                     wind = max_wind_entry.get('wind', {})
+                     main = max_wind_entry.get('main', {})
+                     
+                     result = {
+                        'wind_speed': wind.get('speed', 0),
+                        'wind_deg': wind.get('deg', 0),
+                        'temp': main.get('temp', 0),
+                        'humidity': main.get('humidity', 0),
+                        'rain': max_wind_entry.get('rain', {}).get('1h', 0) if isinstance(max_wind_entry.get('rain'), dict) else 0
+                     }
+                 else:
+                    raise ValueError("No historical data found in response")
+            else:
+                # Parse current weather response
+                wind = data.get('wind', {})
+                main = data.get('main', {})
+                rain = data.get('rain', {})
+                result = {
+                    'wind_speed': wind.get('speed', 0),
+                    'wind_deg': wind.get('deg', 0),
+                    'temp': main.get('temp', 0),
+                    'humidity': main.get('humidity', 0),
+                    'rain': rain.get('1h', 0) if isinstance(rain, dict) else 0
+                }
+        except (requests.exceptions.RequestException, ValueError, KeyError) as e:
+            logger.error(f"OpenWeather API error: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                 logger.error(f"Response content: {e.response.text}")
+            
+            # Fallback to mock data for demonstration if API fails
+            logger.warning("Falling back to mock weather data")
+            result = {
+                'wind_speed': random.uniform(0, 10),
+                'wind_deg': random.uniform(0, 360),
+                'temp': random.uniform(10, 30),
+                'humidity': random.uniform(30, 80),
+                'rain': 0 if random.random() > 0.3 else random.uniform(0, 5),
+                'is_mock': True
+            }
+
+        return jsonify({
+            'status': 'success',
+            'data': result
+        })
+
+    except Exception as e:
+        logger.error(f"Unexpected error in get_weather: {str(e)}")
+        return jsonify({'status': 'error', 'error': 'Internal server error', 'details': str(e)}), 500
+
+
+@app.route('/api/pollution', methods=['GET'])
+def get_pollution():
+    """Get air pollution data from OpenWeather API"""
+    lat = request.args.get('lat')
+    lon = request.args.get('lon')
+    date = request.args.get('date') # Unix timestamp
+
+    if not lat or not lon:
+        return jsonify({'error': 'Missing lat or lon parameter'}), 400
+    
+    api_key = os.getenv('OPENWEATHER_API_KEY')
+    if not api_key:
+        logger.error("OPENWEATHER_API_KEY not found in environment variables")
+        return jsonify({'error': 'Server configuration error'}), 500
+
+    try:
+        # Determine if we need history, current, or forecast
+        # For now, we'll support history (if date provided) and current (if not)
+        # The user wants to plot data, so history/forecast is best.
+        
+        if date:
+            # Historical data
+            # Get 24 hours starting from the provided timestamp
+            start_ts = int(date)
+            end_ts = start_ts + 86400 # +24 hours
+            
+            url = "http://api.openweathermap.org/data/2.5/air_pollution/history"
+            params = {
+                'lat': lat,
+                'lon': lon,
+                'start': start_ts,
+                'end': end_ts,
+                'appid': api_key
+            }
+        else:
+            # Current data
+            url = "http://api.openweathermap.org/data/2.5/air_pollution"
+            params = {
+                'lat': lat,
+                'lon': lon,
+                'appid': api_key
+            }
+
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+            
+            # Return the raw list of data points
+            # Each item has 'dt', 'main' (aqi), 'components' (co, no2, etc.)
+            return jsonify({
+                'status': 'success',
+                'data': data.get('list', [])
+            })
+
+        except (requests.exceptions.RequestException, ValueError, KeyError) as e:
+            logger.error(f"OpenWeather Pollution API error: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                 logger.error(f"Response content: {e.response.text}")
+            
+            # Fallback to mock data
+            logger.warning("Falling back to mock pollution data")
+            mock_data = []
+            start_ts = int(date) if date else int(datetime.now().timestamp())
+            for i in range(24):
+                mock_data.append({
+                    'dt': start_ts + i * 3600,
+                    'main': {'aqi': random.randint(1, 5)},
+                    'components': {
+                        'co': random.uniform(200, 300),
+                        'no2': random.uniform(0, 10),
+                        'o3': random.uniform(50, 100),
+                        'so2': random.uniform(0, 5),
+                        'pm2_5': random.uniform(0, 15),
+                        'pm10': random.uniform(0, 20),
+                        'nh3': random.uniform(0, 1),
+                        'no': random.uniform(0, 1)
+                    }
+                })
+            
+            return jsonify({
+                'status': 'success',
+                'data': mock_data,
+                'is_mock': True
+            })
+
+    except Exception as e:
+        logger.error(f"Unexpected error in get_pollution: {str(e)}")
+        return jsonify({'status': 'error', 'error': 'Internal server error', 'details': str(e)}), 500
 
 
 if __name__ == '__main__':

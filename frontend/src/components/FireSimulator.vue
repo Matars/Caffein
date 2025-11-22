@@ -17,6 +17,12 @@
         >
           🧪 Simulation Mode
         </button>
+        <button 
+          :class="['mode-btn', { active: currentMode === 'algorithmic' }]"
+          @click="switchMode('algorithmic')"
+        >
+          🤖 Algorithmic Sim
+        </button>
       </div>
 
       <!-- View Mode Controls -->
@@ -26,21 +32,11 @@
         </p>
 
         <div class="control-group">
-          <label for="start-date">Start Date:</label>
+          <label for="date-select">Date:</label>
           <input 
             type="date" 
-            id="start-date"
-            v-model="viewStartDate"
-            class="date-input"
-          />
-        </div>
-
-        <div class="control-group">
-          <label for="end-date">End Date:</label>
-          <input 
-            type="date" 
-            id="end-date"
-            v-model="viewEndDate"
+            id="date-select"
+            v-model="selectedDate"
             class="date-input"
           />
         </div>
@@ -96,7 +92,7 @@
             <strong>Total Fires:</strong> {{ historicalFires.length }}
           </div>
           <div class="result-item">
-            <strong>Date Range:</strong> {{ viewStartDate }} to {{ viewEndDate }}
+            <strong>Date:</strong> {{ selectedDate }}
           </div>
           <div class="result-item">
             <strong>Min FRP:</strong> {{ minFrpFilter }}
@@ -113,10 +109,20 @@
       </div>
 
       <!-- Simulation Mode Controls -->
-      <div v-else class="mode-content">
+      <div v-else-if="currentMode === 'simulation'" class="mode-content">
         <p class="instructions">
           Click anywhere on the map to place a fire and see predicted pollution spread.
         </p>
+
+        <div class="control-group">
+          <label for="sim-date">Simulation Date:</label>
+          <input 
+            type="date" 
+            id="sim-date"
+            v-model="selectedDate"
+            class="date-input"
+          />
+        </div>
         
         <div class="control-group">
           <label for="frp-slider">Fire Intensity (FRP): {{ frp }}</label>
@@ -137,13 +143,14 @@
         </div>
 
         <div class="control-group">
-          <label>Pollutants to Display:</label>
+          <label>Pollutant Overlay (Heatmap):</label>
           <div class="pollutant-checkboxes">
-            <label v-for="pollutant in availablePollutants" :key="pollutant">
+            <label v-for="pollutant in availablePollutants" :key="pollutant" class="radio-label">
               <input 
-                type="checkbox" 
+                type="radio" 
                 :value="pollutant" 
-                v-model="selectedPollutants"
+                v-model="selectedPollutant"
+                name="pollutant-selector"
               />
               {{ pollutant }}
             </label>
@@ -196,6 +203,14 @@
           Mean: {{ values.mean.toFixed(4) }}
         </div>
       </div>
+
+      <!-- Algorithmic Simulation Mode -->
+      <div v-if="currentMode === 'algorithmic'" class="mode-content">
+        <AlgorithmicSimulation 
+          ref="algorithmicSimRef"
+          :map="map" 
+        />
+      </div>
     </div>
 
     <div class="map-container">
@@ -210,6 +225,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet.heat'
 import axios from 'axios'
+import AlgorithmicSimulation from './AlgorithmicSimulation.vue'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api'
 
@@ -221,11 +237,11 @@ let fireMarker: L.Marker | null = null
 let historicalFireMarkers: L.CircleMarker[] = []
 
 // State - Mode
-const currentMode = ref<'view' | 'simulation'>('view')
+const currentMode = ref<'view' | 'simulation' | 'algorithmic'>('view')
+const algorithmicSimRef = ref<InstanceType<typeof AlgorithmicSimulation> | null>(null)
 
 // State - View Mode
-const viewStartDate = ref('2024-01-01')
-const viewEndDate = ref('2024-12-31')
+const selectedDate = ref('2024-01-01')
 const minFrpFilter = ref(0)
 const historicalFires = ref<any[]>([])
 const loadingFires = ref(false)
@@ -237,7 +253,7 @@ const currentBbox = ref<{ min_lat: number; max_lat: number; min_lon: number; max
 // State - Simulation Mode
 const frp = ref(150)
 const availablePollutants = ['CO', 'NO2', 'CH4', 'HCHO', 'SO2', 'AAI']
-const selectedPollutants = ref(['CO', 'NO2', 'AAI'])
+const selectedPollutant = ref('CO')
 const loading = ref(false)
 const error = ref('')
 const simulationData = ref<any>(null)
@@ -246,12 +262,19 @@ const currentPollutantIndex = ref(0)
 // Initialize map
 onMounted(() => {
   if (mapContainer.value) {
-    // Create map centered on Scandinavia
-    map = L.map(mapContainer.value).setView([62.0, 15.0], 5)
+    // Create map centered on Sweden with restricted bounds
+    const swedenBounds: L.LatLngBoundsExpression = [[55.0, 10.0], [70.0, 25.0]]
+    
+    map = L.map(mapContainer.value, {
+      maxBounds: swedenBounds,
+      maxBoundsViscosity: 1.0,
+      minZoom: 5
+    }).setView([62.0, 15.0], 5)
 
-    // Add tile layer
+    // Add tile layer (Standard OSM for clear land cover visibility)
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
     }).addTo(map)
 
     // Add click handler (only active in simulation mode)
@@ -260,13 +283,18 @@ onMounted(() => {
 })
 
 // Switch between modes
-function switchMode(mode: 'view' | 'simulation') {
+function switchMode(mode: 'view' | 'simulation' | 'algorithmic') {
   currentMode.value = mode
   
   // Clear everything when switching modes
   clearHistoricalFires()
   clearSimulation()
   clearBbox()
+  
+  // Reset algorithmic simulation if switching away from it
+  if (mode !== 'algorithmic' && algorithmicSimRef.value) {
+    algorithmicSimRef.value.reset()
+  }
 }
 
 // Toggle BBox Mode
@@ -309,8 +337,8 @@ async function loadHistoricalFires() {
   try {
     // Query Athena for fire data
     const params: any = {
-      start_date: viewStartDate.value,
-      end_date: viewEndDate.value,
+      start_date: selectedDate.value,
+      end_date: selectedDate.value,
       min_frp: minFrpFilter.value,
       limit: 2000 // Increase limit to see more fires
     }
@@ -439,6 +467,14 @@ async function handleMapClick(e: L.LeafletMouseEvent) {
     return
   }
 
+  // Handle Algorithmic Simulation Mode
+  if (currentMode.value === 'algorithmic') {
+    if (algorithmicSimRef.value) {
+      algorithmicSimRef.value.startSimulation(e.latlng.lat, e.latlng.lng)
+    }
+    return
+  }
+
   // Only handle clicks in simulation mode
   if (currentMode.value !== 'simulation') return
   
@@ -482,15 +518,13 @@ async function runSimulation(lat: number, lng: number) {
       latitude: lat,
       longitude: lng,
       frp: frp.value,
-      pollutants: selectedPollutants.value
+      pollutants: [selectedPollutant.value]
     })
     
     simulationData.value = response.data
     
-    // Display heatmap for first pollutant
-    if (selectedPollutants.value.length > 0) {
-      displayHeatmap(selectedPollutants.value[0])
-    }
+    // Display heatmap for selected pollutant
+    displayHeatmap(selectedPollutant.value)
     
   } catch (err: any) {
     error.value = err.response?.data?.error || 'Simulation failed'
@@ -554,9 +588,17 @@ function clearSimulation() {
 }
 
 // Watch for pollutant selection changes
-watch(selectedPollutants, (newPollutants) => {
-  if (simulationData.value && newPollutants.length > 0) {
-    displayHeatmap(newPollutants[0])
+watch(selectedPollutant, (newPollutant) => {
+  if (simulationData.value) {
+    // If we already have simulation data, just update the heatmap
+    // But we might need to re-run simulation if the backend didn't return data for this pollutant
+    // Since we now only request one pollutant, we should probably re-run the simulation
+    // OR we could request all pollutants and just display one.
+    // For now, let's re-run if we have a fire marker
+    if (fireMarker) {
+      const { lat, lng } = fireMarker.getLatLng()
+      runSimulation(lat, lng)
+    }
   }
 })
 
@@ -624,7 +666,7 @@ watch(frp, async () => {
 }
 
 .mode-btn.active {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #667eea;
   color: white;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
 }
@@ -797,7 +839,8 @@ watch(frp, async () => {
   background: #f5f5f5;
 }
 
-.pollutant-checkboxes input[type="checkbox"] {
+.pollutant-checkboxes input[type="checkbox"],
+.pollutant-checkboxes input[type="radio"] {
   cursor: pointer;
 }
 
@@ -816,7 +859,7 @@ watch(frp, async () => {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #667eea;
   color: white;
 }
 
