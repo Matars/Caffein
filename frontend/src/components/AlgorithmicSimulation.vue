@@ -66,9 +66,6 @@
             </div>
           </div>
         </div>
-        <div class="wind-explanation">
-          <small>🔥 Fire & pollution spread {{ getSpreadDirectionLabel(windDirection) }} with the wind</small>
-        </div>
       </div>
 
       <!-- View Mode Toggle -->
