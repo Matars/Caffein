@@ -1,10 +1,25 @@
 <template>
   <div class="algorithmic-simulation-panel">
     <div class="panel-header">
-      <h3><span class="icon">🔥</span> Fire Simulation</h3>
+      <h3><span class="icon">🔥</span> Fire Spread Simulation</h3>
       <p class="description">
-        Cellular Automata Model
+        Cellular Automata Model with Real Weather Data
       </p>
+    </div>
+
+    <!-- Model Info Card -->
+    <div class="model-info-card">
+      <div class="model-info-header">
+        <span class="icon">🧪</span> Simulation Model
+      </div>
+      <div class="model-info-content">
+        <p>This simulation uses <strong>real-time weather data</strong> to model:</p>
+        <ul class="model-features">
+          <li><span class="feature-icon">🔥</span> Fire spread based on wind direction & speed</li>
+          <li><span class="feature-icon">🌫️</span> Pollution cloud dispersion patterns</li>
+          <li><span class="feature-icon">📊</span> CO, NO₂, PM2.5 emission estimates</li>
+        </ul>
+      </div>
     </div>
 
     <div class="panel-content">
@@ -26,6 +41,7 @@
       <div class="weather-card">
         <div class="weather-header">
           <span class="icon">🌤️</span> Weather Conditions
+          <span class="live-badge" v-if="selectedLocation">LIVE</span>
         </div>
         <div class="weather-grid">
           <div class="weather-item">
@@ -41,11 +57,11 @@
             <span class="value" :style="{ color: seasonalRiskColor }">{{ seasonalRiskLabel }}</span>
           </div>
           <div class="weather-item">
-            <span class="label">Direction</span>
+            <span class="label">Wind From</span>
             <div class="direction-value">
-              <span class="value">{{ Math.round(windDirection) }}°</span>
-              <div class="wind-arrow" :style="{ transform: `rotate(${windDirection}deg)` }">
-                ⬇
+              <span class="value">{{ getWindDirectionLabel(windDirection) }}</span>
+              <div class="wind-arrow-simple" :style="{ transform: `rotate(${windDirection + 180}deg)` }" aria-label="Wind direction indicator">
+                <span class="wind-arrow-head"></span>
               </div>
             </div>
           </div>
@@ -287,6 +303,25 @@ const getLegendLabels = (id: string) => {
   if (id === 'no2') return ['0', '50', '100', '200+ ppb']
   return ['Low', 'Mod', 'High', 'Ext']
 }
+
+// Wind direction helper functions
+const getWindDirectionLabel = (degrees: number): string => {
+  // Meteorological: 0° = North (wind FROM North)
+  const directions = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 
+                      'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW']
+  const index = Math.round(((degrees % 360) / 22.5)) % 16
+  return `${Math.round(degrees)}° (${directions[index]})`
+}
+
+const getSpreadDirectionLabel = (degrees: number): string => {
+  // Fire spreads in the opposite direction from where wind comes from
+  const spreadDegrees = (degrees + 180) % 360
+  const directions = ['South', 'SSW', 'Southwest', 'WSW', 'West', 'WNW', 'Northwest', 'NNW',
+                      'North', 'NNE', 'Northeast', 'ENE', 'East', 'ESE', 'Southeast', 'SSE']
+  const index = Math.round(((spreadDegrees % 360) / 22.5)) % 16
+  return directions[index]
+}
+
 const simulationInterval = ref<number | null>(null)
 const pollutionHistory = ref<{time: number, co: number, no2: number, pm2_5: number}[]>([])
 const realPollutionData = ref<PollutionData[]>([])
@@ -946,14 +981,25 @@ const updateSimulation = () => {
             const targetCell = grid.value[ni][nj]
             if (targetCell.state === CellState.Fuel || targetCell.state === CellState.City) {
               
-              // Calculate wind effect
-              const dy = ni - i
-              const dx = nj - j
-              let gridAngle = Math.atan2(dy, dx) * 180 / Math.PI
-              let angleToNeighborCompass = (gridAngle + 90 + 360) % 360
-              let angleDiff = Math.abs(windDirection.value - angleToNeighborCompass)
+              // Calculate wind effect on fire spread
+              // Grid coordinates: i increases going South, j increases going East
+              const dy = ni - i  // positive = neighbor is South of current
+              const dx = nj - j  // positive = neighbor is East of current
+              
+              // Convert grid direction to compass bearing (0=N, 90=E, 180=S, 270=W)
+              // atan2(dx, -dy) gives compass bearing: East(+dx)=90°, South(+dy)=180°
+              let directionToNeighbor = Math.atan2(dx, -dy) * 180 / Math.PI
+              directionToNeighbor = (directionToNeighbor + 360) % 360
+              
+              // Wind spreads fire in the direction it's blowing TO (opposite of FROM)
+              // windDirection 0 (N) means wind blows FROM North, so fire spreads TO South (180°)
+              const spreadDirection = (windDirection.value + 180) % 360
+              
+              // Calculate how aligned the neighbor is with the spread direction
+              let angleDiff = Math.abs(spreadDirection - directionToNeighbor)
               if (angleDiff > 180) angleDiff = 360 - angleDiff
               
+              // windFactor: 1.0 when perfectly aligned, -1.0 when opposite
               const windFactor = Math.cos(angleDiff * Math.PI / 180)
               const windEffect = (windSpeed.value / 2) * windFactor 
               
@@ -993,12 +1039,16 @@ const updateSimulation = () => {
         if (seasonFactor > 0.3 && windSpeed.value > 3 && (cell.landType === 'forest' || cell.landType === 'scrub')) {
            if (Math.random() < 0.05 * seasonFactor) { // Scaled by season
               const dist = 2 + Math.floor(Math.random() * 3) // 2-4 cells away
-              const rad = windDirection.value * Math.PI / 180
               
-              // Wind 0 (N) -> pushes to -i
-              // Wind 90 (E) -> pushes to +j
-              const targetI = Math.round(i - Math.cos(rad) * dist)
-              const targetJ = Math.round(j + Math.sin(rad) * dist)
+              // Embers land in the direction the wind is blowing TO
+              // Wind FROM North (0°) means embers land to the South (+i)
+              const spreadDirection = (windDirection.value + 180) % 360
+              const rad = spreadDirection * Math.PI / 180
+              
+              // Convert compass bearing to grid offsets
+              // North (0°) = -i, East (90°) = +j, South (180°) = +i, West (270°) = -j
+              const targetI = Math.round(i + Math.cos((spreadDirection - 180) * Math.PI / 180) * dist)
+              const targetJ = Math.round(j + Math.sin(spreadDirection * Math.PI / 180) * dist)
               
               if (targetI >= 0 && targetI < GRID_SIZE && targetJ >= 0 && targetJ < GRID_SIZE) {
                  const spotCell = grid.value[targetI][targetJ]
@@ -1068,12 +1118,19 @@ const updateSimulation = () => {
           if (ni >= 0 && ni < GRID_SIZE && nj >= 0 && nj < GRID_SIZE) {
             const nIdx = ni * GRID_SIZE + nj
             
-            // Calculate wind factor
+            // Calculate wind factor for pollution spread
+            // Grid: i increases South, j increases East
             const dy = ni - i
             const dx = nj - j
-            let gridAngle = Math.atan2(dy, dx) * 180 / Math.PI
-            let angleToNeighborCompass = (gridAngle + 90 + 360) % 360
-            let angleDiff = Math.abs(windDirection.value - angleToNeighborCompass)
+            
+            // Direction to neighbor in compass terms
+            let directionToNeighbor = Math.atan2(dx, -dy) * 180 / Math.PI
+            directionToNeighbor = (directionToNeighbor + 360) % 360
+            
+            // Pollution spreads in direction wind is blowing TO
+            const spreadDirection = (windDirection.value + 180) % 360
+            
+            let angleDiff = Math.abs(spreadDirection - directionToNeighbor)
             if (angleDiff > 180) angleDiff = 360 - angleDiff
             
             const windFactor = Math.cos(angleDiff * Math.PI / 180)
@@ -1081,7 +1138,7 @@ const updateSimulation = () => {
             // Base diffusion
             let transfer = cell.pollutionLevel * 0.05
             
-            // Wind bias
+            // Wind bias - more transfer in wind direction
             if (windFactor > 0) {
                transfer *= (1 + windSpeed.value * 0.2)
             } else {
@@ -1281,6 +1338,22 @@ defineExpose({
   gap: 6px;
 }
 
+.live-badge {
+  margin-left: auto;
+  background: #10b981;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .weather-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1316,10 +1389,85 @@ defineExpose({
   gap: 8px;
 }
 
-.wind-arrow {
-  font-size: 1.2rem;
-  color: #1e90ff;
+.wind-arrow-simple {
+  width: 42px;
+  height: 42px;
+  border: 2px solid #e5e7eb;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: #ffffff;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.wind-arrow-head {
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 18px solid #1d4ed8;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.25));
+}
+
+.wind-explanation {
+  margin-top: 10px;
+  padding: 8px;
+  background: rgba(255, 140, 0, 0.1);
+  border-radius: 6px;
+  border-left: 3px solid #ff8c00;
+}
+
+.wind-explanation small {
+  font-size: 0.75rem;
+  color: #92400e;
+}
+
+/* Model Info Card */
+.model-info-card {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-radius: 10px;
+  padding: 12px 16px;
+  border: 1px solid #bbf7d0;
+  margin-bottom: 10px;
+}
+
+.model-info-header {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #166534;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.model-info-content {
+  font-size: 0.8rem;
+  color: #374151;
+}
+
+.model-info-content p {
+  margin: 0 0 8px 0;
+}
+
+.model-features {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.model-features li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 0.75rem;
+}
+
+.feature-icon {
+  font-size: 0.9rem;
 }
 
 /* Modern Slider */

@@ -142,28 +142,51 @@
           </div>
         </div>
 
-        <div class="control-group">
-          <label>Pollutant Overlay (Heatmap):</label>
-          <div class="pollutant-checkboxes">
-            <label v-for="pollutant in availablePollutants" :key="pollutant" class="radio-label">
+        <div class="control-group pollutant-section">
+          <label>Pollutant Overlays (Select Multiple):</label>
+          <p class="helper-text">Choose one or more pollutants to display on the heatmap</p>
+          <div class="pollutant-grid">
+            <label 
+              v-for="pollutant in availablePollutants" 
+              :key="pollutant" 
+              class="pollutant-chip"
+              :class="{ active: selectedPollutants.includes(pollutant) }"
+            >
               <input 
-                type="radio" 
+                type="checkbox" 
                 :value="pollutant" 
-                v-model="selectedPollutant"
-                name="pollutant-selector"
+                v-model="selectedPollutants"
+                class="checkbox-hidden"
               />
-              {{ pollutant }}
+              <span class="chip-icon">{{ getPollutantIcon(pollutant) }}</span>
+              <span class="chip-label">{{ pollutant }}</span>
             </label>
+          </div>
+          <div class="selection-summary" v-if="selectedPollutants.length > 0">
+            <span class="summary-label">Selected:</span>
+            <span class="summary-badges">
+              <span 
+                v-for="p in selectedPollutants" 
+                :key="p" 
+                class="badge"
+                :style="{ backgroundColor: getPollutantColor(p) }"
+              >
+                {{ p }}
+              </span>
+            </span>
           </div>
         </div>
 
-        <button 
-          v-if="simulationData" 
-          @click="clearSimulation" 
-          class="btn-clear"
-        >
-          Clear Simulation
-        </button>
+        <div class="action-buttons">
+          <button 
+            v-if="simulationData" 
+            @click="clearSimulation" 
+            class="btn-clear"
+          >
+            <span class="btn-icon">🗑️</span>
+            Clear Simulation
+          </button>
+        </div>
       </div>
 
       <div v-if="loading" class="loading">
@@ -253,7 +276,7 @@ const currentBbox = ref<{ min_lat: number; max_lat: number; min_lon: number; max
 // State - Simulation Mode
 const frp = ref(150)
 const availablePollutants = ['CO', 'NO2', 'CH4', 'HCHO', 'SO2', 'AAI']
-const selectedPollutant = ref('CO')
+const selectedPollutants = ref<string[]>(['CO']) // Now supports multiple selections
 const loading = ref(false)
 const error = ref('')
 const simulationData = ref<any>(null)
@@ -508,23 +531,53 @@ function placeFireMarker(lat: number, lng: number) {
     .openPopup()
 }
 
+// Helper functions for pollutant display
+function getPollutantIcon(pollutant: string): string {
+  const icons: Record<string, string> = {
+    'CO': '💨',
+    'NO2': '🟤',
+    'CH4': '🔵',
+    'HCHO': '🟣',
+    'SO2': '🟡',
+    'AAI': '🟠'
+  }
+  return icons[pollutant] || '⚪'
+}
+
+function getPollutantColor(pollutant: string): string {
+  const colors: Record<string, string> = {
+    'CO': '#8884d8',
+    'NO2': '#82ca9d',
+    'CH4': '#3498db',
+    'HCHO': '#9b59b6',
+    'SO2': '#f1c40f',
+    'AAI': '#e67e22'
+  }
+  return colors[pollutant] || '#95a5a6'
+}
+
 // Run simulation
 async function runSimulation(lat: number, lng: number) {
   loading.value = true
   error.value = ''
   
   try {
+    // Use all selected pollutants or default to CO if none selected
+    const pollutantsToSimulate = selectedPollutants.value.length > 0 
+      ? selectedPollutants.value 
+      : ['CO']
+    
     const response = await axios.post(`${API_BASE_URL}/simulate-fire`, {
       latitude: lat,
       longitude: lng,
       frp: frp.value,
-      pollutants: [selectedPollutant.value]
+      pollutants: pollutantsToSimulate
     })
     
     simulationData.value = response.data
     
-    // Display heatmap for selected pollutant
-    displayHeatmap(selectedPollutant.value)
+    // Display combined heatmap for all selected pollutants
+    displayCombinedHeatmap()
     
   } catch (err: any) {
     error.value = err.response?.data?.error || 'Simulation failed'
@@ -571,6 +624,58 @@ function displayHeatmap(pollutant: string) {
   }).addTo(map)
 }
 
+// Display combined heatmap for multiple pollutants
+function displayCombinedHeatmap() {
+  if (!simulationData.value || !map) return
+  
+  // Remove existing heatmap
+  if (heatLayer) {
+    map.removeLayer(heatLayer)
+  }
+  
+  const pollutantsToShow = selectedPollutants.value.length > 0 
+    ? selectedPollutants.value 
+    : ['CO']
+  
+  // Combine heat data from all selected pollutants
+  const heatData: number[][] = []
+  
+  simulationData.value.grid_data.forEach((point: any) => {
+    let combinedValue = 0
+    let validPollutants = 0
+    
+    pollutantsToShow.forEach((pollutant: string) => {
+      if (point[pollutant] !== undefined) {
+        combinedValue += point[pollutant]
+        validPollutants++
+      }
+    })
+    
+    if (validPollutants > 0) {
+      // Average the values for combined display
+      heatData.push([point.latitude, point.longitude, combinedValue / validPollutants])
+    }
+  })
+  
+  // Get max value for normalization
+  const maxValue = Math.max(...heatData.map((d: number[]) => d[2]))
+  
+  // Create heatmap layer with gradient based on number of pollutants
+  heatLayer = (L as any).heatLayer(heatData, {
+    radius: 25,
+    blur: 35,
+    maxZoom: 10,
+    max: maxValue,
+    gradient: {
+      0.0: 'blue',
+      0.3: 'lime',
+      0.5: 'yellow',
+      0.7: 'orange',
+      1.0: 'red'
+    }
+  }).addTo(map)
+}
+
 // Clear simulation
 function clearSimulation() {
   if (heatLayer && map) {
@@ -588,19 +693,13 @@ function clearSimulation() {
 }
 
 // Watch for pollutant selection changes
-watch(selectedPollutant, (newPollutant) => {
-  if (simulationData.value) {
-    // If we already have simulation data, just update the heatmap
-    // But we might need to re-run simulation if the backend didn't return data for this pollutant
-    // Since we now only request one pollutant, we should probably re-run the simulation
-    // OR we could request all pollutants and just display one.
-    // For now, let's re-run if we have a fire marker
-    if (fireMarker) {
-      const { lat, lng } = fireMarker.getLatLng()
-      runSimulation(lat, lng)
-    }
+watch(selectedPollutants, () => {
+  if (simulationData.value && fireMarker) {
+    // Re-run simulation with all selected pollutants
+    const { lat, lng } = fireMarker.getLatLng()
+    runSimulation(lat, lng)
   }
-})
+}, { deep: true })
 
 // Watch for FRP changes (re-run simulation if fire is placed)
 watch(frp, async () => {
@@ -817,31 +916,119 @@ watch(frp, async () => {
   margin-top: 5px;
 }
 
-.pollutant-checkboxes {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
+/* Pollutant Section Styles */
+.pollutant-section {
+  background: #f8f9fa;
+  padding: 15px;
+  border-radius: 10px;
+  border: 1px solid #e0e0e0;
 }
 
-.pollutant-checkboxes label {
+.pollutant-section > label {
+  font-size: 15px;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.helper-text {
+  color: #888;
+  font-size: 12px;
+  margin: 4px 0 12px 0;
+  font-style: italic;
+}
+
+.pollutant-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.pollutant-chip {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  font-weight: normal;
-  font-size: 13px;
+  padding: 10px 8px;
+  background: white;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
   cursor: pointer;
-  padding: 6px;
-  border-radius: 4px;
-  transition: background 0.2s;
+  transition: all 0.2s ease;
+  font-weight: 500;
 }
 
-.pollutant-checkboxes label:hover {
-  background: #f5f5f5;
+.pollutant-chip:hover {
+  border-color: #667eea;
+  background: #f0f4ff;
+  transform: translateY(-1px);
 }
 
-.pollutant-checkboxes input[type="checkbox"],
-.pollutant-checkboxes input[type="radio"] {
-  cursor: pointer;
+.pollutant-chip.active {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
+}
+
+.checkbox-hidden {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.chip-icon {
+  font-size: 16px;
+}
+
+.chip-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.selection-summary {
+  margin-top: 12px;
+  padding: 10px;
+  background: white;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.summary-label {
+  font-size: 12px;
+  color: #666;
+  font-weight: 500;
+}
+
+.summary-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+}
+
+.action-buttons {
+  margin-top: 15px;
+}
+
+.action-buttons .btn-clear {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.action-buttons .btn-icon {
+  font-size: 16px;
 }
 
 /* Buttons */
