@@ -60,16 +60,8 @@
             <span class="label">Wind From</span>
             <div class="direction-value">
               <span class="value">{{ getWindDirectionLabel(windDirection) }}</span>
-              <div class="wind-compass">
-                <div class="compass-ring">
-                  <span class="compass-n">N</span>
-                  <span class="compass-e">E</span>
-                  <span class="compass-s">S</span>
-                  <span class="compass-w">W</span>
-                </div>
-                <div class="wind-arrow-container" :style="{ transform: `rotate(${windDirection + 180}deg)` }">
-                  <div class="wind-arrow">➤</div>
-                </div>
+              <div class="wind-arrow-simple" :style="{ transform: `rotate(${windDirection + 180}deg)` }" aria-label="Wind direction indicator">
+                <span class="wind-arrow-head"></span>
               </div>
             </div>
           </div>
@@ -1400,58 +1392,26 @@ defineExpose({
   gap: 8px;
 }
 
-.wind-arrow {
-  font-size: 1rem;
-  color: #ff4500;
-}
-
-/* Wind Compass */
-.wind-compass {
-  position: relative;
-  width: 50px;
-  height: 50px;
-}
-
-.compass-ring {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  border: 2px solid #e0e0e0;
+.wind-arrow-simple {
+  width: 42px;
+  height: 42px;
+  border: 2px solid #e5e7eb;
   border-radius: 50%;
-  background: #fff;
-}
-
-.compass-ring span {
-  position: absolute;
-  font-size: 0.55rem;
-  font-weight: 700;
-  color: #666;
-}
-
-.compass-n { top: 2px; left: 50%; transform: translateX(-50%); color: #ef4444 !important; }
-.compass-e { right: 3px; top: 50%; transform: translateY(-50%); }
-.compass-s { bottom: 2px; left: 50%; transform: translateX(-50%); }
-.compass-w { left: 3px; top: 50%; transform: translateY(-50%); }
-
-.wind-arrow-container {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 100%;
-  height: 100%;
-  transform-origin: center center;
-  margin-left: -50%;
-  margin-top: -50%;
-  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
   display: flex;
+  align-items: center;
   justify-content: center;
-  align-items: flex-start;
-  padding-top: 5px;
+  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: #ffffff;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
 }
 
-.wind-arrow-container .wind-arrow {
-  font-size: 0.9rem;
-  color: #1e90ff;
+.wind-arrow-head {
+  width: 0;
+  height: 0;
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-bottom: 18px solid #1d4ed8;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.25));
 }
 
 .wind-explanation {
