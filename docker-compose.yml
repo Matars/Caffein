@@ -27,7 +27,7 @@ services:
       - "5001:5001"
     environment:
       - FLASK_ENV=development
-      - MONGO_URI=mongodb+srv://matar:CaffeinForLife123@caffein.re4j8gw.mongodb.net/?retryWrites=true&w=majority&appName=Caffein
+      - MONGO_DB_URI=mongodb://matar:CaffeinForLife123@mongodb:27017/caffein?authSource=admin
       - DATABASE_NAME=caffein
     depends_on:
       - mongodb
