@@ -12,6 +12,7 @@ import math
 import random
 import requests
 from datetime import datetime
+import pandas as pd
 
 # Load environment variables
 load_dotenv()
@@ -697,6 +698,92 @@ def get_pollution():
     except Exception as e:
         logger.error(f"Unexpected error in get_pollution: {str(e)}")
         return jsonify({'status': 'error', 'error': 'Internal server error', 'details': str(e)}), 500
+
+
+@app.route('/api/fires/csv', methods=['GET'])
+def get_fires_from_csv():
+    """
+    Get fire data from local CSV file (combined-countries.csv)
+    
+    Query parameters:
+    - start_date: Start date (YYYY-MM-DD format, optional)
+    - end_date: End date (YYYY-MM-DD format, optional)
+    - min_frp: Minimum Fire Radiative Power (optional)
+    - limit: Maximum number of results (default: 5000)
+    """
+    try:
+        # Get query parameters
+        start_date = request.args.get('start_date', type=str)
+        end_date = request.args.get('end_date', type=str)
+        min_frp = request.args.get('min_frp', 0, type=float)
+        limit = request.args.get('limit', 5000, type=int)
+        
+        # Path to CSV file
+        csv_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'NASA-MODIS-DATA', 'combined-countries.csv')
+        
+        if not os.path.exists(csv_path):
+            logger.error(f"CSV file not found at: {csv_path}")
+            return jsonify({
+                'error': 'CSV file not found',
+                'status': 'error'
+            }), 404
+        
+        logger.info(f"Reading fire data from CSV: {csv_path}")
+        
+        # Read CSV file
+        df = pd.read_csv(csv_path)
+        
+        # Ensure acq_date is datetime
+        df['acq_date'] = pd.to_datetime(df['acq_date'])
+        
+        # Apply filters
+        if start_date:
+            df = df[df['acq_date'] >= start_date]
+        
+        if end_date:
+            df = df[df['acq_date'] <= end_date]
+        
+        if min_frp > 0:
+            df = df[df['frp'] >= min_frp]
+        
+        # Sort by date (most recent first) and apply limit
+        df = df.sort_values('acq_date', ascending=False).head(limit)
+        
+        # Convert to list of dicts
+        fires = []
+        for _, row in df.iterrows():
+            fires.append({
+                'latitude': float(row['latitude']),
+                'longitude': float(row['longitude']),
+                'acq_date': row['acq_date'].strftime('%Y-%m-%d'),
+                'acq_time': str(row.get('acq_time', '')),
+                'frp': float(row.get('frp', 0)),
+                'brightness': float(row.get('brightness', 0)) if pd.notna(row.get('brightness')) else None,
+                'confidence': str(row.get('confidence', '')),
+                'satellite': str(row.get('satellite', '')),
+                'instrument': str(row.get('instrument', ''))
+            })
+        
+        logger.info(f"Returning {len(fires)} fire records from CSV")
+        
+        return jsonify({
+            'data': fires,
+            'count': len(fires),
+            'status': 'success',
+            'source': 'csv',
+            'filters': {
+                'start_date': start_date,
+                'end_date': end_date,
+                'min_frp': min_frp
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error reading CSV file: {str(e)}")
+        return jsonify({
+            'error': str(e),
+            'status': 'error'
+        }), 500
 
 
 if __name__ == '__main__':

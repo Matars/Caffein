@@ -28,40 +28,27 @@
       <!-- View Mode Controls -->
       <div v-if="currentMode === 'view'" class="mode-content">
         <p class="instructions">
-          View historical fire data from NASA MODIS. Filter by date to narrow down results.
+          View historical fire data from NASA MODIS across Scandinavia (2019-2024). Select a date range to explore.
         </p>
 
         <div class="control-group">
-          <label for="date-select">Date:</label>
+          <label for="start-date">Start Date:</label>
           <input 
             type="date" 
-            id="date-select"
-            v-model="selectedDate"
+            id="start-date"
+            v-model="startDate"
             class="date-input"
           />
         </div>
 
         <div class="control-group">
-          <label>Region Selection:</label>
-          <div class="bbox-controls">
-            <button 
-              @click="toggleBboxMode" 
-              :class="['btn-secondary', { active: isBboxMode }]"
-            >
-              {{ isBboxMode ? (bboxStartPoint ? '📍 Click 2nd Corner' : '📍 Click 1st Corner') : '🗺️ Select Region' }}
-            </button>
-            <button 
-              v-if="currentBbox" 
-              @click="clearBbox" 
-              class="btn-icon"
-              title="Clear Region"
-            >
-              ❌
-            </button>
-          </div>
-          <small v-if="currentBbox" class="bbox-status">
-            Region: {{ currentBbox.min_lat.toFixed(1) }}, {{ currentBbox.min_lon.toFixed(1) }} to {{ currentBbox.max_lat.toFixed(1) }}, {{ currentBbox.max_lon.toFixed(1) }}
-          </small>
+          <label for="end-date">End Date:</label>
+          <input 
+            type="date" 
+            id="end-date"
+            v-model="endDate"
+            class="date-input"
+          />
         </div>
 
         <div class="control-group">
@@ -75,7 +62,7 @@
             step="10"
             class="number-input"
           />
-          <small>Filter fires with FRP >= {{ minFrpFilter }}</small>
+          <small>Filter fires with FRP >= {{ minFrpFilter }} MW</small>
         </div>
 
         <button 
@@ -83,19 +70,19 @@
           class="btn-primary"
           :disabled="loadingFires"
         >
-          {{ loadingFires ? 'Loading...' : 'Load Fires' }}
+          {{ loadingFires ? 'Loading...' : '🔥 Load Fires' }}
         </button>
 
         <div v-if="historicalFires.length > 0" class="results">
-          <h3>Loaded Fires</h3>
+          <h3>📊 Loaded Fires</h3>
           <div class="result-item">
             <strong>Total Fires:</strong> {{ historicalFires.length }}
           </div>
           <div class="result-item">
-            <strong>Date:</strong> {{ selectedDate }}
+            <strong>Date Range:</strong> {{ startDate }} to {{ endDate }}
           </div>
           <div class="result-item">
-            <strong>Min FRP:</strong> {{ minFrpFilter }}
+            <strong>Min FRP:</strong> {{ minFrpFilter }} MW
           </div>
         </div>
 
@@ -104,7 +91,7 @@
           @click="clearHistoricalFires" 
           class="btn-clear"
         >
-          Clear Fires
+          🗑️ Clear Fires
         </button>
       </div>
 
@@ -264,16 +251,14 @@ const currentMode = ref<'view' | 'simulation' | 'algorithmic'>('view')
 const algorithmicSimRef = ref<InstanceType<typeof AlgorithmicSimulation> | null>(null)
 
 // State - View Mode
-const selectedDate = ref('2024-01-01')
+const startDate = ref('2024-01-01')
+const endDate = ref('2024-01-31')
 const minFrpFilter = ref(0)
 const historicalFires = ref<any[]>([])
 const loadingFires = ref(false)
-const isBboxMode = ref(false)
-const bboxStartPoint = ref<L.LatLng | null>(null)
-let bboxLayer: L.Rectangle | null = null
-const currentBbox = ref<{ min_lat: number; max_lat: number; min_lon: number; max_lon: number } | null>(null)
 
 // State - Simulation Mode
+const selectedDate = ref('2024-01-01') // Used for simulation date picker
 const frp = ref(150)
 const availablePollutants = ['CO', 'NO2', 'CH4', 'HCHO', 'SO2', 'AAI']
 const selectedPollutants = ref<string[]>(['CO']) // Now supports multiple selections
@@ -312,44 +297,11 @@ function switchMode(mode: 'view' | 'simulation' | 'algorithmic') {
   // Clear everything when switching modes
   clearHistoricalFires()
   clearSimulation()
-  clearBbox()
   
   // Reset algorithmic simulation if switching away from it
   if (mode !== 'algorithmic' && algorithmicSimRef.value) {
     algorithmicSimRef.value.reset()
   }
-}
-
-// Toggle BBox Mode
-function toggleBboxMode() {
-  isBboxMode.value = !isBboxMode.value
-  bboxStartPoint.value = null
-  if (!isBboxMode.value) {
-    // Cancelled, maybe clear existing bbox? No, keep it if it exists.
-  }
-}
-
-// Clear BBox
-function clearBbox() {
-  if (bboxLayer && map) {
-    map.removeLayer(bboxLayer)
-    bboxLayer = null
-  }
-  currentBbox.value = null
-  bboxStartPoint.value = null
-  isBboxMode.value = false
-}
-
-// Draw Bounding Box
-function drawBoundingBox(bounds: L.LatLngBounds) {
-  if (!map) return
-  if (bboxLayer) map.removeLayer(bboxLayer)
-  
-  bboxLayer = L.rectangle(bounds, {
-    color: "#3388ff", 
-    weight: 2,
-    fillOpacity: 0.1
-  }).addTo(map)
 }
 
 // Load historical fires from CSV
@@ -358,23 +310,15 @@ async function loadHistoricalFires() {
   error.value = ''
   
   try {
-    // Query Athena for fire data
+    // Query CSV endpoint for fire data
     const params: any = {
-      start_date: selectedDate.value,
-      end_date: selectedDate.value,
+      start_date: startDate.value,
+      end_date: endDate.value,
       min_frp: minFrpFilter.value,
-      limit: 2000 // Increase limit to see more fires
-    }
-    
-    // Add bbox if selected
-    if (currentBbox.value) {
-      params.min_lat = currentBbox.value.min_lat
-      params.max_lat = currentBbox.value.max_lat
-      params.min_lon = currentBbox.value.min_lon
-      params.max_lon = currentBbox.value.max_lon
+      limit: 5000
     }
 
-    const response = await axios.get(`${API_BASE_URL}/fires/athena`, { params })
+    const response = await axios.get(`${API_BASE_URL}/fires/csv`, { params })
     
     historicalFires.value = response.data.data || []
     
@@ -382,7 +326,7 @@ async function loadHistoricalFires() {
     displayHistoricalFires()
     
   } catch (err: any) {
-    error.value = err.response?.data?.error || 'Failed to load fires'
+    error.value = err.response?.data?.error || 'Failed to load fires from CSV'
     console.error('Load fires error:', err)
   } finally {
     loadingFires.value = false
@@ -462,31 +406,8 @@ function clearHistoricalFires() {
 
 // Handle map click
 async function handleMapClick(e: L.LeafletMouseEvent) {
-  // Handle View Mode - BBox Selection
+  // View Mode - no map interaction needed (just load fires via button)
   if (currentMode.value === 'view') {
-    if (isBboxMode.value) {
-      if (!bboxStartPoint.value) {
-        // First click
-        bboxStartPoint.value = e.latlng
-      } else {
-        // Second click
-        const bounds = L.latLngBounds(bboxStartPoint.value, e.latlng)
-        drawBoundingBox(bounds)
-        
-        currentBbox.value = {
-          min_lat: bounds.getSouth(),
-          max_lat: bounds.getNorth(),
-          min_lon: bounds.getWest(),
-          max_lon: bounds.getEast()
-        }
-        
-        bboxStartPoint.value = null
-        isBboxMode.value = false
-        
-        // Auto-load fires for this region
-        loadHistoricalFires()
-      }
-    }
     return
   }
 
