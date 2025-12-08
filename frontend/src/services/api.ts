@@ -73,6 +73,7 @@ export interface WeatherData {
   temp: number
   humidity: number
   rain?: number
+  is_mock?: boolean  // Indicates if data is simulated fallback
 }
 
 export interface WeatherResponse {

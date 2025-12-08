@@ -23,8 +23,29 @@
     </div>
 
     <div class="panel-content">
-      <!-- Date Selection -->
+      <!-- Mode Selection -->
       <div class="control-section">
+        <label class="section-label">Weather Source</label>
+        <div class="view-toggle">
+          <button 
+            class="toggle-btn" 
+            :class="{ active: weatherMode === 'real' }"
+            @click="switchWeatherMode('real')"
+          >
+            📅 Real Date
+          </button>
+          <button 
+            class="toggle-btn" 
+            :class="{ active: weatherMode === 'custom' }"
+            @click="switchWeatherMode('custom')"
+          >
+            ⚙️ Custom
+          </button>
+        </div>
+      </div>
+
+      <!-- Date Selection (Real Mode) -->
+      <div class="control-section" v-if="weatherMode === 'real'">
         <label class="section-label">Simulation Date</label>
         <VueDatePicker 
           v-model="selectedDate" 
@@ -37,13 +58,113 @@
         />
       </div>
 
+      <!-- Custom Weather Parameters -->
+      <div class="custom-weather-section" v-if="weatherMode === 'custom'">
+        <div class="custom-param">
+          <label class="param-label">
+            <span class="icon">🌡️</span>
+            Temperature: <strong>{{ customWeather.temperature.toFixed(1) }}°C</strong>
+          </label>
+          <input 
+            type="range" 
+            v-model.number="customWeather.temperature" 
+            min="-20" 
+            max="40" 
+            step="0.5"
+            class="param-slider"
+          />
+          <div class="param-hint">Range: -20°C to 40°C</div>
+        </div>
+
+        <div class="custom-param">
+          <label class="param-label">
+            <span class="icon">💨</span>
+            Wind Speed: <strong>{{ customWeather.windSpeed.toFixed(1) }} m/s</strong>
+          </label>
+          <input 
+            type="range" 
+            v-model.number="customWeather.windSpeed" 
+            min="0" 
+            max="25" 
+            step="0.5"
+            class="param-slider"
+          />
+          <div class="param-hint">Range: 0 to 25 m/s</div>
+        </div>
+
+        <div class="custom-param">
+          <label class="param-label">
+            <span class="icon">🧭</span>
+            Wind Direction: <strong>{{ customWeather.windDirection }}°</strong> ({{ getWindDirectionLabel(customWeather.windDirection).split(' ')[1] }})
+          </label>
+          <input 
+            type="range" 
+            v-model.number="customWeather.windDirection" 
+            min="0" 
+            max="359" 
+            step="1"
+            class="param-slider"
+          />
+          <div class="wind-compass">
+            <div class="compass-arrow" :style="{ transform: `rotate(${customWeather.windDirection}deg)` }">↑</div>
+            <div class="compass-label">Wind FROM</div>
+          </div>
+        </div>
+
+        <div class="custom-param">
+          <label class="param-label">
+            <span class="icon">🌧️</span>
+            Rain: <strong>{{ customWeather.rain.toFixed(1) }} mm</strong>
+          </label>
+          <input 
+            type="range" 
+            v-model.number="customWeather.rain" 
+            min="0" 
+            max="50" 
+            step="0.5"
+            class="param-slider"
+          />
+          <div class="param-hint">Range: 0 to 50 mm</div>
+        </div>
+
+        <div class="custom-param">
+          <label class="param-label">
+            <span class="icon">📅</span>
+            Season (for fire risk): <strong>{{ getSeasonName(customWeather.month) }}</strong>
+          </label>
+          <select v-model.number="customWeather.month" class="season-select">
+            <option :value="0">January (Winter)</option>
+            <option :value="1">February (Winter)</option>
+            <option :value="2">March (Early Spring)</option>
+            <option :value="3">April (Spring)</option>
+            <option :value="4">May (Late Spring)</option>
+            <option :value="5">June (Summer)</option>
+            <option :value="6">July (Summer)</option>
+            <option :value="7">August (Late Summer)</option>
+            <option :value="8">September (Early Fall)</option>
+            <option :value="9">October (Fall)</option>
+            <option :value="10">November (Late Fall)</option>
+            <option :value="11">December (Winter)</option>
+          </select>
+        </div>
+
+        <button @click="applyCustomWeather" class="btn-apply-custom">
+          <span class="icon">✓</span> Apply Custom Weather
+        </button>
+      </div>
+
       <!-- Weather Display -->
       <div class="weather-card">
         <div class="weather-header">
           <span class="icon">🌤️</span> Weather Conditions
-          <span class="live-badge" v-if="selectedLocation">LIVE</span>
+          <span class="live-badge" v-if="selectedLocation && !isMockData">LIVE</span>
+          <span class="mock-badge" v-if="isMockData && selectedLocation">SIMULATED</span>
         </div>
         <div class="weather-grid">
+          <div class="weather-item">
+            <span class="label">Temperature</span>
+            <span class="value">{{ temperature.toFixed(1) }} <span class="unit">°C</span></span>
+          </div>
           <div class="weather-item">
             <span class="label">Wind Speed</span>
             <span class="value">{{ windSpeed.toFixed(1) }} <span class="unit">m/s</span></span>
@@ -204,7 +325,11 @@
 
       <!-- Real Pollution Chart -->
       <div class="chart-section" v-if="realPollutionData.length > 0">
-        <h4>Historical Air Quality (24h)</h4>
+        <div class="chart-header">
+          <h4>Historical Air Quality (24h)</h4>
+          <span class="chart-badge live" v-if="!isPollutionMock">LIVE</span>
+          <span class="chart-badge mock" v-if="isPollutionMock">SIMULATED</span>
+        </div>
         <div class="chart-container">
           <svg :viewBox="`0 0 ${fullWidth} ${fullHeight}`" class="chart-svg">
             <g :transform="`translate(${chartPadding.left}, 0)`">
@@ -258,6 +383,7 @@ const CELL_SIZE_METERS = 30 // Each cell is 30m x 30m
 const windDirection = ref(0)
 const windSpeed = ref(0)
 const rainLevel = ref(0)
+const temperature = ref(15) // Temperature in Celsius
 const simulationDuration = ref(10) // Default 10 hours
 const elapsedSimulatedHours = ref(0)
 const isPaused = ref(false)
@@ -327,11 +453,58 @@ const pollutionHistory = ref<{time: number, co: number, no2: number, pm2_5: numb
 const realPollutionData = ref<PollutionData[]>([])
 const selectedDate = ref(new Date().toISOString().split('T')[0])
 const selectedLocation = ref<{lat: number, lng: number} | null>(null)
+const isMockData = ref(false) // Track if weather data is simulated
+const isPollutionMock = ref(false) // Track if pollution data is simulated
+
+// Custom Weather Mode
+const weatherMode = ref<'real' | 'custom'>('real')
+const customWeather = ref({
+  temperature: 15,
+  windSpeed: 5,
+  windDirection: 180,
+  rain: 0,
+  month: new Date().getMonth()
+})
+
+const switchWeatherMode = (mode: 'real' | 'custom') => {
+  weatherMode.value = mode
+  if (mode === 'custom') {
+    applyCustomWeather()
+  } else if (selectedLocation.value) {
+    // Fetch real weather when switching back
+    fetchWeather()
+  }
+}
+
+const applyCustomWeather = () => {
+  temperature.value = customWeather.value.temperature
+  windSpeed.value = customWeather.value.windSpeed
+  windDirection.value = customWeather.value.windDirection
+  rainLevel.value = customWeather.value.rain
+  // Update selected date to match the custom month for seasonal calculations
+  const year = new Date().getFullYear()
+  selectedDate.value = `${year}-${String(customWeather.value.month + 1).padStart(2, '0')}-15`
+  isMockData.value = true // Mark as custom/simulated
+}
+
+const getSeasonName = (month: number): string => {
+  const seasons = [
+    'Winter', 'Winter', 'Early Spring', 'Spring', 'Late Spring', 'Summer',
+    'Summer', 'Late Summer', 'Early Fall', 'Fall', 'Late Fall', 'Winter'
+  ]
+  return seasons[month] || 'Unknown'
+}
 
 // Seasonality Logic
 const seasonalRiskFactor = computed(() => {
-  const date = new Date(selectedDate.value)
-  const month = date.getMonth() // 0-11
+  // Use custom month if in custom mode, otherwise use selected date
+  let month: number
+  if (weatherMode.value === 'custom') {
+    month = customWeather.value.month
+  } else {
+    const date = new Date(selectedDate.value)
+    month = date.getMonth() // 0-11
+  }
   
   // Sweden Fire Seasonality (0=Jan, 11=Dec)
   // High risk: May-Aug
@@ -378,6 +551,12 @@ const fetchWeather = async (lat?: number, lng?: number) => {
     selectedLocation.value = { lat, lng }
   }
 
+  // If in custom mode, just apply custom weather instead of fetching
+  if (weatherMode.value === 'custom') {
+    applyCustomWeather()
+    return
+  }
+
   // Need a location to fetch weather
   if (!selectedLocation.value) return
 
@@ -392,11 +571,14 @@ const fetchWeather = async (lat?: number, lng?: number) => {
       windSpeed.value = response.data.wind_speed || 0
       windDirection.value = response.data.wind_deg || 0
       rainLevel.value = response.data.rain || 0
+      temperature.value = response.data.temp || 15 // Store temperature
+      isMockData.value = response.data.is_mock || false // Track if data is simulated
     } else {
       console.error('Weather fetch failed:', response)
     }
   } catch (e) {
     console.error('Weather fetch error:', e)
+    isMockData.value = true // Assume mock on error
   }
 
   // Fetch Pollution
@@ -404,9 +586,12 @@ const fetchWeather = async (lat?: number, lng?: number) => {
     const response = await apiService.getPollution(targetLat, targetLng, timestamp)
     if (response.status === 'success' && response.data) {
       realPollutionData.value = response.data
+      // Check if any data point has is_mock flag
+      isPollutionMock.value = response.data.some((d: any) => d.is_mock) || false
     }
   } catch (e) {
     console.error('Pollution fetch error:', e)
+    isPollutionMock.value = true // Assume mock on error
   }
 }
 
@@ -1349,6 +1534,16 @@ defineExpose({
   animation: pulse 2s infinite;
 }
 
+.mock-badge {
+  margin-left: auto;
+  background: #f59e0b;
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
@@ -1691,7 +1886,7 @@ defineExpose({
   background: #3b82f6;
   color: white;
   border-color: #3b82f6;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.3);
+  box-shadow: 0 2px 4px rgba(59, 130,246, 0.3);
 }
 
 .pill-btn:hover:not(.active) {
@@ -1796,11 +1991,36 @@ defineExpose({
   padding: 16px;
 }
 
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
 .chart-section h4 {
-  margin: 0 0 12px 0;
+  margin: 0;
   font-size: 0.9rem;
   font-weight: 600;
   color: #374151;
+}
+
+.chart-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.chart-badge.live {
+  background: #10b981;
+  color: white;
+  animation: pulse 2s infinite;
+}
+
+.chart-badge.mock {
+  background: #f59e0b;
+  color: white;
 }
 
 .chart-container {
@@ -1848,4 +2068,152 @@ defineExpose({
 
 .dot.co2 { background: #ff4500; }
 .dot.ch4 { background: #1e90ff; }
+
+/* Custom Weather Section */
+.custom-weather-section {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.custom-param {
+  margin-bottom: 16px;
+}
+
+.param-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.85rem;
+  color: #374151;
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.param-slider {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: #e5e7eb;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+
+.param-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+  transition: all 0.2s ease;
+}
+
+.param-slider::-webkit-slider-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+}
+
+.param-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: none;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+  transition: all 0.2s ease;
+}
+
+.param-slider::-moz-range-thumb:hover {
+  background: #2563eb;
+  transform: scale(1.1);
+}
+
+.param-hint {
+  font-size: 0.7rem;
+  color: #9ca3af;
+  margin-top: 4px;
+}
+
+.wind-compass {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.compass-arrow {
+  width: 48px;
+  height: 48px;
+  border: 2px solid #e5e7eb;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  background: white;
+  transition: transform 0.3s ease;
+}
+
+.compass-label {
+  font-size: 0.7rem;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.season-select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  font-size: 0.85rem;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.season-select:hover {
+  border-color: #3b82f6;
+}
+
+.season-select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.btn-apply-custom {
+  width: 100%;
+  padding: 10px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.2s ease;
+  margin-top: 16px;
+}
+
+.btn-apply-custom:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.btn-apply-custom:active {
+  transform: translateY(0);
+}
 </style>

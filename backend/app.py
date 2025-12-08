@@ -590,10 +590,38 @@ def get_weather():
             
             # Fallback to mock data for demonstration if API fails
             logger.warning("Falling back to mock weather data")
+            
+            # Generate realistic seasonal temperatures for Sweden
+            # Get month from timestamp (if provided) or use current month
+            if date:
+                month = datetime.fromtimestamp(int(date)).month
+            else:
+                month = datetime.now().month
+            
+            # Sweden seasonal temperature ranges (average ±5°C variation)
+            # Month: 1=Jan, 2=Feb, ..., 12=Dec
+            seasonal_temps = {
+                1: -3,   # January: -8°C to +2°C
+                2: -3,   # February: -8°C to +2°C
+                3: 0,    # March: -5°C to +5°C
+                4: 6,    # April: 1°C to 11°C
+                5: 12,   # May: 7°C to 17°C
+                6: 16,   # June: 11°C to 21°C
+                7: 18,   # July: 13°C to 23°C
+                8: 17,   # August: 12°C to 22°C
+                9: 12,   # September: 7°C to 17°C
+                10: 7,   # October: 2°C to 12°C
+                11: 2,   # November: -3°C to +7°C
+                12: -1   # December: -6°C to +4°C
+            }
+            
+            base_temp = seasonal_temps.get(month, 10)
+            temp = base_temp + random.uniform(-5, 5)  # Add realistic variation
+            
             result = {
                 'wind_speed': random.uniform(0, 10),
                 'wind_deg': random.uniform(0, 360),
-                'temp': random.uniform(10, 30),
+                'temp': round(temp, 1),  # Realistic seasonal temperature
                 'humidity': random.uniform(30, 80),
                 'rain': 0 if random.random() > 0.3 else random.uniform(0, 5),
                 'is_mock': True

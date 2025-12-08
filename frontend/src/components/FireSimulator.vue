@@ -76,7 +76,8 @@
         <div v-if="historicalFires.length > 0" class="results">
           <h3>📊 Loaded Fires</h3>
           <div class="result-item">
-            <strong>Total Fires:</strong> {{ historicalFires.length }}
+            <strong>Total Fires:</strong> {{ visibleFireCount }}
+            <span v-if="selectionBox" class="filter-indicator"> ({{ historicalFires.length }} total, {{ visibleFireCount }} in box)</span>
           </div>
           <div class="result-item">
             <strong>Date Range:</strong> {{ startDate }} to {{ endDate }}
@@ -84,6 +85,24 @@
           <div class="result-item">
             <strong>Min FRP:</strong> {{ minFrpFilter }} MW
           </div>
+        </div>
+
+        <div v-if="historicalFires.length > 0" class="box-selection-controls">
+          <button 
+            @click="toggleBoxSelection" 
+            :class="['btn-secondary', { active: isBoxSelectionMode }]"
+          >
+            {{ isBoxSelectionMode ? '🟦 Drawing Mode Active' : '📦 Box Selection' }}
+          </button>
+          
+          <button 
+            v-if="selectionBox" 
+            @click="clearSelectionBox" 
+            class="btn-icon"
+            title="Clear Selection Box"
+          >
+            ❌ Clear Box
+          </button>
         </div>
 
         <button 
@@ -256,6 +275,10 @@ const endDate = ref('2024-01-31')
 const minFrpFilter = ref(0)
 const historicalFires = ref<any[]>([])
 const loadingFires = ref(false)
+const isBoxSelectionMode = ref(false)
+const selectionBox = ref<L.Rectangle | null>(null)
+const boxStartPoint = ref<L.LatLng | null>(null)
+const visibleFireCount = ref(0)
 
 // State - Simulation Mode
 const selectedDate = ref('2024-01-01') // Used for simulation date picker
@@ -372,6 +395,9 @@ function displayHistoricalFires() {
     historicalFireMarkers.push(marker)
   })
   
+  // Update visible count (initially all fires are visible)
+  updateVisibleFireCount()
+  
   // Fit map to show all markers if any exist
   if (historicalFireMarkers.length > 0) {
     const group = L.featureGroup(historicalFireMarkers)
@@ -401,13 +427,21 @@ function clearHistoricalFireMarkers() {
 // Clear historical fires
 function clearHistoricalFires() {
   clearHistoricalFireMarkers()
+  clearSelectionBox()
   historicalFires.value = []
+  isBoxSelectionMode.value = false
+  if (mapContainer.value) {
+    mapContainer.value.style.cursor = ''
+  }
 }
 
 // Handle map click
 async function handleMapClick(e: L.LeafletMouseEvent) {
-  // View Mode - no map interaction needed (just load fires via button)
+  // View Mode - Handle box selection
   if (currentMode.value === 'view') {
+    if (isBoxSelectionMode.value) {
+      handleBoxSelectionClick(e)
+    }
     return
   }
 
@@ -432,6 +466,120 @@ async function handleMapClick(e: L.LeafletMouseEvent) {
   
   // Run simulation
   await runSimulation(lat, lng)
+}
+
+// Toggle box selection mode
+function toggleBoxSelection() {
+  isBoxSelectionMode.value = !isBoxSelectionMode.value
+  
+  if (!isBoxSelectionMode.value) {
+    // Cancel drawing if toggled off
+    boxStartPoint.value = null
+  }
+  
+  // Change cursor style
+  if (map && mapContainer.value) {
+    if (isBoxSelectionMode.value) {
+      mapContainer.value.style.cursor = 'crosshair'
+    } else {
+      mapContainer.value.style.cursor = ''
+    }
+  }
+}
+
+// Handle box selection click
+function handleBoxSelectionClick(e: L.LeafletMouseEvent) {
+  if (!map) return
+  
+  if (!boxStartPoint.value) {
+    // First click - set start point
+    boxStartPoint.value = e.latlng
+  } else {
+    // Second click - create box
+    const bounds = L.latLngBounds(boxStartPoint.value, e.latlng)
+    
+    // Remove old selection box if exists
+    if (selectionBox.value) {
+      map.removeLayer(selectionBox.value)
+    }
+    
+    // Create new selection box
+    selectionBox.value = L.rectangle(bounds, {
+      color: '#3388ff',
+      weight: 2,
+      fillOpacity: 0.1
+    }).addTo(map)
+    
+    // Filter fires based on box
+    filterFiresByBox(bounds)
+    
+    // Reset for next selection
+    boxStartPoint.value = null
+    isBoxSelectionMode.value = false
+    if (mapContainer.value) {
+      mapContainer.value.style.cursor = ''
+    }
+  }
+}
+
+// Filter fires by bounding box
+function filterFiresByBox(bounds: L.LatLngBounds) {
+  historicalFireMarkers.forEach((marker, index) => {
+    const latLng = marker.getLatLng()
+    const isInBounds = bounds.contains(latLng)
+    
+    // Show/hide marker based on whether it's in bounds
+    if (isInBounds) {
+      marker.setStyle({ opacity: 0.8, fillOpacity: 0.6 })
+    } else {
+      marker.setStyle({ opacity: 0.2, fillOpacity: 0.1 })
+    }
+  })
+  
+  // Update visible fire count
+  updateVisibleFireCount()
+}
+
+// Update visible fire count
+function updateVisibleFireCount() {
+  if (!selectionBox.value) {
+    // No box - all fires are visible
+    visibleFireCount.value = historicalFires.value.length
+  } else {
+    // Count fires within the box
+    const bounds = selectionBox.value.getBounds()
+    let count = 0
+    
+    historicalFires.value.forEach((fire: any) => {
+      const lat = parseFloat(fire.latitude)
+      const lon = parseFloat(fire.longitude)
+      
+      if (!isNaN(lat) && !isNaN(lon)) {
+        const latLng = L.latLng(lat, lon)
+        if (bounds.contains(latLng)) {
+          count++
+        }
+      }
+    })
+    
+    visibleFireCount.value = count
+  }
+}
+
+// Clear selection box
+function clearSelectionBox() {
+  if (selectionBox.value && map) {
+    map.removeLayer(selectionBox.value)
+    selectionBox.value = null
+  }
+  
+  // Reset all markers to full opacity
+  historicalFireMarkers.forEach(marker => {
+    marker.setStyle({ opacity: 0.8, fillOpacity: 0.6 })
+  })
+  
+  // Update count
+  updateVisibleFireCount()
 }
 
 // Place fire marker on map
@@ -692,25 +840,78 @@ watch(frp, async () => {
 }
 
 .btn-secondary {
-  width: 100%;
-  padding: 10px;
-  background: #f0f0f0;
-  border: 1px solid #ccc;
+  flex: 1;
+  padding: 10px 16px;
+  border: 2px solid #667eea;
   border-radius: 6px;
+  background: white;
+  color: #667eea;
   cursor: pointer;
+  font-size: 14px;
   font-weight: 600;
-  color: #333;
-  transition: all 0.2s;
+  transition: all 0.3s;
 }
 
 .btn-secondary:hover {
-  background: #e0e0e0;
+  background: #667eea;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
 }
 
 .btn-secondary.active {
-  background: #3388ff;
+  background: #667eea;
   color: white;
-  border-color: #3388ff;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(102, 126, 234, 0);
+  }
+}
+
+.btn-clear,
+.btn-icon {
+  padding: 10px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.btn-clear {
+  background: #dc3545;
+  color: white;
+  border: none;
+}
+
+.btn-clear:hover {
+  background: #c82333;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+.btn-icon {
+  padding: 10px 16px;
+  border: 2px solid #dc3545;
+  border-radius: 6px;
+  background: white;
+  color: #dc3545;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.btn-icon:hover {
+  background: #dc3545;
+  color: white;
+  transform: translateY(-1px);
 }
 
 .bbox-controls {
@@ -719,25 +920,7 @@ watch(frp, async () => {
   align-items: center;
 }
 
-.btn-icon {
-  padding: 10px;
-  background: #fff0f0;
-  border: 1px solid #ffcccc;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.btn-icon:hover {
-  background: #ffe0e0;
-}
-
-.bbox-status {
-  display: block;
-  margin-top: 5px;
-  color: #666;
-  font-size: 11px;
-}
-
+/* Mode Content */
 .mode-content {
   animation: fadeIn 0.3s ease;
 }
@@ -990,6 +1173,72 @@ watch(frp, async () => {
   background: #c82333;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+}
+
+/* Box Selection Controls */
+.box-selection-controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.btn-secondary {
+  flex: 1;
+  padding: 10px 16px;
+  border: 2px solid #667eea;
+  border-radius: 6px;
+  background: white;
+  color: #667eea;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.btn-secondary:hover {
+  background: #667eea;
+  color: white;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.btn-secondary.active {
+  background: #667eea;
+  color: white;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(102, 126, 234, 0.7);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(102, 126, 234, 0);
+  }
+}
+
+.btn-icon {
+  padding: 10px 16px;
+  border: 2px solid #dc3545;
+  border-radius: 6px;
+  background: white;
+  color: #dc3545;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s;
+}
+
+.btn-icon:hover {
+  background: #dc3545;
+  color: white;
+  transform: translateY(-1px);
+}
+
+.filter-indicator {
+  color: #667eea;
+  font-size: 12px;
+  font-style: italic;
 }
 
 .loading {
