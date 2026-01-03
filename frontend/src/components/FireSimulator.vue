@@ -1,8 +1,6 @@
 <template>
   <div class="fire-simulator">
-    <div class="controls">
-      <h2>🔥 Fire & Pollution System</h2>
-      
+    <div class="controls" :class="{ 'controls-wide': currentMode === 'algorithmic' }">
       <!-- Mode Selection -->
       <div class="mode-selector">
         <button 
@@ -787,12 +785,21 @@ watch(frp, async () => {
 }
 
 .controls {
-  width: 380px;
+  width: 440px;
+  min-width: 440px;
   padding: 20px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
   overflow-y: auto;
+  transition: width 0.3s ease, min-width 0.3s ease;
+}
+
+/* Wide mode for Algorithmic Simulation - no scrolling needed */
+.controls.controls-wide {
+  width: 580px;
+  min-width: 580px;
+  overflow-y: hidden;
 }
 
 .controls h2 {
@@ -818,7 +825,7 @@ watch(frp, async () => {
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: #666;
   transition: all 0.3s ease;
@@ -879,7 +886,7 @@ watch(frp, async () => {
   padding: 10px 16px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   transition: all 0.3s;
 }
@@ -903,7 +910,7 @@ watch(frp, async () => {
   background: white;
   color: #dc3545;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   transition: all 0.3s;
 }
@@ -933,7 +940,7 @@ watch(frp, async () => {
 /* Instructions */
 .instructions {
   color: #666;
-  font-size: 14px;
+  font-size: 15px;
   margin-bottom: 20px;
   padding: 12px;
   background: #f0f8ff;
@@ -952,13 +959,13 @@ watch(frp, async () => {
   font-weight: 600;
   margin-bottom: 8px;
   color: #333;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .control-group small {
   display: block;
   color: #666;
-  font-size: 12px;
+  font-size: 13px;
   margin-top: 5px;
 }
 
@@ -969,7 +976,7 @@ watch(frp, async () => {
   padding: 10px;
   border: 2px solid #e0e0e0;
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 15px;
   transition: border-color 0.3s;
 }
 
@@ -1015,7 +1022,7 @@ watch(frp, async () => {
 .slider-labels {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: 13px;
   color: #666;
   margin-top: 5px;
 }
@@ -1029,14 +1036,14 @@ watch(frp, async () => {
 }
 
 .pollutant-section > label {
-  font-size: 15px;
+  font-size: 16px;
   color: #333;
   margin-bottom: 4px;
 }
 
 .helper-text {
   color: #888;
-  font-size: 12px;
+  font-size: 13px;
   margin: 4px 0 12px 0;
   font-style: italic;
 }
@@ -1085,7 +1092,7 @@ watch(frp, async () => {
 }
 
 .chip-label {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 
@@ -1101,7 +1108,7 @@ watch(frp, async () => {
 }
 
 .summary-label {
-  font-size: 12px;
+  font-size: 14px;
   color: #666;
   font-weight: 500;
 }
@@ -1115,7 +1122,7 @@ watch(frp, async () => {
 .badge {
   padding: 4px 10px;
   border-radius: 12px;
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 600;
   color: white;
 }
@@ -1143,7 +1150,7 @@ watch(frp, async () => {
   border: none;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   transition: all 0.3s;
   margin-bottom: 15px;
@@ -1237,7 +1244,7 @@ watch(frp, async () => {
 
 .filter-indicator {
   color: #667eea;
-  font-size: 12px;
+  font-size: 14px;
   font-style: italic;
 }
 
@@ -1276,17 +1283,17 @@ watch(frp, async () => {
   background: #f8f9fa;
   padding: 15px;
   border-radius: 4px;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .results h3 {
   margin: 0 0 10px 0;
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .results h4 {
   margin: 15px 0 8px 0;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 .result-item {

@@ -1,364 +1,320 @@
 <template>
   <div class="algorithmic-simulation-panel">
-    <div class="panel-header">
-      <h3><span class="icon">🔥</span> Fire Spread Simulation</h3>
-      <p class="description">
-        Cellular Automata Model with Real Weather Data
-      </p>
-    </div>
-
-    <!-- Model Info Card -->
-    <div class="model-info-card">
-      <div class="model-info-header">
-        <span class="icon">🧪</span> Simulation Model
-      </div>
-      <div class="model-info-content">
-        <p>This simulation uses <strong>real-time weather data</strong> to model:</p>
-        <ul class="model-features">
-          <li><span class="feature-icon">🔥</span> Fire spread based on wind direction & speed</li>
-          <li><span class="feature-icon">🌫️</span> Pollution cloud dispersion patterns</li>
-          <li><span class="feature-icon">📊</span> CO, NO₂, PM2.5 emission estimates</li>
-        </ul>
-      </div>
-    </div>
-
+    <!-- Main Content - Fills Available Space -->
     <div class="panel-content">
-      <!-- Mode Selection -->
-      <div class="control-section">
-        <label class="section-label">Weather Source</label>
-        <div class="view-toggle">
-          <button 
-            class="toggle-btn" 
-            :class="{ active: weatherMode === 'real' }"
-            @click="switchWeatherMode('real')"
-          >
-            📅 Real Date
-          </button>
-          <button 
-            class="toggle-btn" 
-            :class="{ active: weatherMode === 'custom' }"
-            @click="switchWeatherMode('custom')"
-          >
-            ⚙️ Custom
-          </button>
-        </div>
-      </div>
-
-      <!-- Date Selection (Real Mode) -->
-      <div class="control-section" v-if="weatherMode === 'real'">
-        <label class="section-label">Simulation Date</label>
-        <VueDatePicker 
-          v-model="selectedDate" 
-          :enable-time-picker="false"
-          auto-apply
-          :format="'yyyy-MM-dd'"
-          model-type="yyyy-MM-dd"
-          @update:model-value="() => fetchWeather()"
-          class="custom-datepicker"
-        />
-      </div>
-
-      <!-- Custom Weather Parameters -->
-      <div class="custom-weather-section" v-if="weatherMode === 'custom'">
-        <div class="custom-param">
-          <label class="param-label">
-            <span class="icon">🌡️</span>
-            Temperature: <strong>{{ customWeather.temperature.toFixed(1) }}°C</strong>
-          </label>
-          <input 
-            type="range" 
-            v-model.number="customWeather.temperature" 
-            min="-20" 
-            max="40" 
-            step="0.5"
-            class="param-slider"
-          />
-          <div class="param-hint">Range: -20°C to 40°C</div>
-        </div>
-
-        <div class="custom-param">
-          <label class="param-label">
-            <span class="icon">💨</span>
-            Wind Speed: <strong>{{ customWeather.windSpeed.toFixed(1) }} m/s</strong>
-          </label>
-          <input 
-            type="range" 
-            v-model.number="customWeather.windSpeed" 
-            min="0" 
-            max="25" 
-            step="0.5"
-            class="param-slider"
-          />
-          <div class="param-hint">Range: 0 to 25 m/s</div>
-        </div>
-
-        <div class="custom-param">
-          <label class="param-label">
-            <span class="icon">🧭</span>
-            Wind Direction: <strong>{{ customWeather.windDirection }}°</strong> ({{ getWindDirectionLabel(customWeather.windDirection).split(' ')[1] }})
-          </label>
-          <input 
-            type="range" 
-            v-model.number="customWeather.windDirection" 
-            min="0" 
-            max="359" 
-            step="1"
-            class="param-slider"
-          />
-          <div class="wind-compass">
-            <div class="compass-arrow" :style="{ transform: `rotate(${customWeather.windDirection}deg)` }">↑</div>
-            <div class="compass-label">Wind FROM</div>
-          </div>
-        </div>
-
-        <div class="custom-param">
-          <label class="param-label">
-            <span class="icon">🌧️</span>
-            Rain: <strong>{{ customWeather.rain.toFixed(1) }} mm</strong>
-          </label>
-          <input 
-            type="range" 
-            v-model.number="customWeather.rain" 
-            min="0" 
-            max="50" 
-            step="0.5"
-            class="param-slider"
-          />
-          <div class="param-hint">Range: 0 to 50 mm</div>
-        </div>
-
-        <div class="custom-param">
-          <label class="param-label">
-            <span class="icon">📅</span>
-            Season (for fire risk): <strong>{{ getSeasonName(customWeather.month) }}</strong>
-          </label>
-          <select v-model.number="customWeather.month" class="season-select">
-            <option :value="0">January (Winter)</option>
-            <option :value="1">February (Winter)</option>
-            <option :value="2">March (Early Spring)</option>
-            <option :value="3">April (Spring)</option>
-            <option :value="4">May (Late Spring)</option>
-            <option :value="5">June (Summer)</option>
-            <option :value="6">July (Summer)</option>
-            <option :value="7">August (Late Summer)</option>
-            <option :value="8">September (Early Fall)</option>
-            <option :value="9">October (Fall)</option>
-            <option :value="10">November (Late Fall)</option>
-            <option :value="11">December (Winter)</option>
-          </select>
-        </div>
-
-        <button @click="applyCustomWeather" class="btn-apply-custom">
-          <span class="icon">✓</span> Apply Custom Weather
-        </button>
-      </div>
-
-      <!-- Weather Display -->
-      <div class="weather-card">
-        <div class="weather-header">
-          <span class="icon">🌤️</span> Weather Conditions
-          <span class="live-badge" v-if="selectedLocation && !isMockData">LIVE</span>
+      
+      <!-- Section 1: Weather Configuration -->
+      <div class="section-block">
+        <div class="section-header">
+          <span class="section-icon">🌤️</span>
+          <span class="section-title">Weather Configuration</span>
+          <span class="live-badge" v-if="selectedLocation && !isMockData">LIVE DATA</span>
           <span class="mock-badge" v-if="isMockData && selectedLocation">SIMULATED</span>
         </div>
-        <div class="weather-grid">
-          <div class="weather-item">
-            <span class="label">Temperature</span>
-            <span class="value">{{ temperature.toFixed(1) }} <span class="unit">°C</span></span>
+        
+        <div class="weather-controls">
+          <!-- Weather Source Toggle -->
+          <div class="control-group">
+            <label class="control-label">Data Source</label>
+            <div class="toggle-group">
+              <button 
+                class="toggle-btn large" 
+                :class="{ active: weatherMode === 'real' }"
+                @click="switchWeatherMode('real')"
+              >
+                📅 Real Weather
+              </button>
+              <button 
+                class="toggle-btn large" 
+                :class="{ active: weatherMode === 'custom' }"
+                @click="switchWeatherMode('custom')"
+              >
+                ⚙️ Custom Weather
+              </button>
+            </div>
           </div>
-          <div class="weather-item">
-            <span class="label">Wind Speed</span>
-            <span class="value">{{ windSpeed.toFixed(1) }} <span class="unit">m/s</span></span>
+
+          <!-- Date Picker (Real Mode) -->
+          <div v-if="weatherMode === 'real'" class="control-group">
+            <label class="control-label">Select Date</label>
+            <VueDatePicker 
+              v-model="selectedDate" 
+              :enable-time-picker="false"
+              auto-apply
+              :format="'yyyy-MM-dd'"
+              model-type="yyyy-MM-dd"
+              @update:model-value="() => fetchWeather()"
+              class="custom-datepicker"
+            />
           </div>
-          <div class="weather-item">
-            <span class="label">Rain</span>
-            <span class="value">{{ rainLevel.toFixed(1) }} <span class="unit">mm</span></span>
+        </div>
+
+        <!-- Weather Display Grid -->
+        <div class="weather-display-grid">
+          <div class="weather-stat">
+            <span class="weather-icon">🌡️</span>
+            <div class="weather-info">
+              <span class="weather-value">{{ temperature.toFixed(0) }}°C</span>
+              <span class="weather-label">Temperature</span>
+            </div>
           </div>
-          <div class="weather-item">
-            <span class="label">Fire Risk</span>
-            <span class="value" :style="{ color: seasonalRiskColor }">{{ seasonalRiskLabel }}</span>
+          <div class="weather-stat">
+            <span class="weather-icon">💨</span>
+            <div class="weather-info">
+              <span class="weather-value">{{ windSpeed.toFixed(1) }} m/s</span>
+              <span class="weather-label">Wind Speed</span>
+            </div>
           </div>
-          <div class="weather-item">
-            <span class="label">Wind From</span>
-            <div class="direction-value">
-              <span class="value">{{ getWindDirectionLabel(windDirection) }}</span>
-              <div class="wind-arrow-simple" :style="{ transform: `rotate(${windDirection + 180}deg)` }" aria-label="Wind direction indicator">
-                <span class="wind-arrow-head"></span>
+          <div class="weather-stat">
+            <span class="weather-icon">🌧️</span>
+            <div class="weather-info">
+              <span class="weather-value">{{ rainLevel.toFixed(0) }} mm</span>
+              <span class="weather-label">Precipitation</span>
+            </div>
+          </div>
+          <div class="weather-stat">
+            <span class="weather-icon">⚠️</span>
+            <div class="weather-info">
+              <span class="weather-value" :style="{ color: seasonalRiskColor }">{{ seasonalRiskLabel }}</span>
+              <span class="weather-label">Fire Risk</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Custom Weather Sliders (Custom Mode) -->
+        <div class="custom-weather-panel" v-if="weatherMode === 'custom'">
+          <div class="custom-sliders-grid">
+            <div class="slider-group">
+              <label class="slider-label">🌡️ Temperature</label>
+              <div class="slider-row">
+                <input type="range" v-model.number="customWeather.temperature" min="-20" max="40" step="1" class="custom-slider" />
+                <span class="slider-value">{{ customWeather.temperature }}°C</span>
+              </div>
+            </div>
+            <div class="slider-group">
+              <label class="slider-label">💨 Wind Speed</label>
+              <div class="slider-row">
+                <input type="range" v-model.number="customWeather.windSpeed" min="0" max="25" step="1" class="custom-slider" />
+                <span class="slider-value">{{ customWeather.windSpeed }} m/s</span>
+              </div>
+            </div>
+            <div class="slider-group">
+              <label class="slider-label">🧭 Wind Direction</label>
+              <div class="slider-row">
+                <input type="range" v-model.number="customWeather.windDirection" min="0" max="359" step="15" class="custom-slider" />
+                <span class="slider-value">{{ customWeather.windDirection }}°</span>
+              </div>
+            </div>
+            <div class="slider-group">
+              <label class="slider-label">🌧️ Rainfall</label>
+              <div class="slider-row">
+                <input type="range" v-model.number="customWeather.rain" min="0" max="50" step="1" class="custom-slider" />
+                <span class="slider-value">{{ customWeather.rain }} mm</span>
               </div>
             </div>
           </div>
+          <div class="custom-actions">
+            <select v-model.number="customWeather.month" class="month-select">
+              <option :value="0">January</option>
+              <option :value="1">February</option>
+              <option :value="2">March</option>
+              <option :value="3">April</option>
+              <option :value="4">May</option>
+              <option :value="5">June</option>
+              <option :value="6">July</option>
+              <option :value="7">August</option>
+              <option :value="8">September</option>
+              <option :value="9">October</option>
+              <option :value="10">November</option>
+              <option :value="11">December</option>
+            </select>
+            <button @click="applyCustomWeather" class="btn-apply">
+              ✓ Apply Weather Settings
+            </button>
+          </div>
         </div>
       </div>
 
-      <!-- View Mode Toggle -->
-      <div class="control-section">
-        <label class="section-label">Map View</label>
-        <div class="view-toggle">
-          <button 
-            class="toggle-btn" 
-            :class="{ active: viewMode === 'fire' }"
-            @click="viewMode = 'fire'"
-          >
-            🔥 Fire
-          </button>
-          <button 
-            class="toggle-btn" 
-            :class="{ active: viewMode === 'pollution' }"
-            @click="viewMode = 'pollution'"
-          >
-            🌫️ Pollution
-          </button>
+      <!-- Section 2: Simulation Controls -->
+      <div class="section-block">
+        <div class="section-header">
+          <span class="section-icon">🎮</span>
+          <span class="section-title">Simulation Controls</span>
         </div>
 
-        <!-- Pollutant Selector -->
-        <div v-if="viewMode === 'pollution'" class="pollutant-selector">
-          <div class="pill-group">
-            <button 
-              v-for="p in pollutants" 
-              :key="p.id"
-              class="pill-btn"
-              :class="{ active: selectedPollutant === p.id }"
-              @click="selectedPollutant = p.id"
-              :title="p.name"
-            >
-              {{ p.label }}
-            </button>
+        <div class="sim-controls-grid">
+          <!-- Map View Toggle -->
+          <div class="control-group">
+            <label class="control-label">Map Display</label>
+            <div class="toggle-group">
+              <button class="toggle-btn large" :class="{ active: viewMode === 'fire' }" @click="viewMode = 'fire'">
+                🔥 Fire Spread
+              </button>
+              <button class="toggle-btn large" :class="{ active: viewMode === 'pollution' }" @click="viewMode = 'pollution'">
+                🌫️ Pollution
+              </button>
+            </div>
           </div>
-          <small class="note">{{ getPollutantDescription(selectedPollutant) }}</small>
-          
-          <div class="legend-box">
-            <div class="legend-title">Concentration Severity</div>
-            <div class="legend-bar" :style="{ background: getLegendGradient(selectedPollutant) }"></div>
-            <div class="legend-labels">
-              <span v-for="(label, index) in getLegendLabels(selectedPollutant)" :key="index">{{ label }}</span>
+
+          <!-- Pollutant Selector -->
+          <div v-if="viewMode === 'pollution'" class="control-group">
+            <label class="control-label">Pollutant Type</label>
+            <div class="pollutant-buttons">
+              <button 
+                v-for="p in pollutants" 
+                :key="p.id" 
+                class="pollutant-btn" 
+                :class="{ active: selectedPollutant === p.id }" 
+                @click="selectedPollutant = p.id"
+              >
+                {{ p.label }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Duration Slider -->
+          <div class="control-group">
+            <label class="control-label">Simulation Duration</label>
+            <div class="duration-control">
+              <input type="range" v-model.number="simulationDuration" min="1" max="24" step="1" class="duration-slider" />
+              <span class="duration-value">{{ simulationDuration }} hours</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+          <button 
+            @click="togglePause" 
+            class="btn-action btn-primary" 
+            :disabled="isLoading || isFinished" 
+            :class="{ 'paused': isPaused }"
+          >
+            <span class="btn-icon">{{ isPaused ? '▶' : '⏸' }}</span>
+            <span class="btn-text">{{ isPaused ? 'Resume Simulation' : 'Pause Simulation' }}</span>
+          </button>
+          <button @click="reset" class="btn-action btn-secondary">
+            <span class="btn-icon">↺</span>
+            <span class="btn-text">Reset</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Section 3: Live Status -->
+      <div class="section-block status-section">
+        <div class="section-header">
+          <span class="section-icon">📊</span>
+          <span class="section-title">Simulation Status</span>
+        </div>
+
+        <div class="status-grid">
+          <!-- Status Badge -->
+          <div class="status-item">
+            <div v-if="isLoading" class="status-badge loading">
+              <span class="spinner"></span> Simulating...
+            </div>
+            <div v-else-if="isFinished" class="status-badge finished">
+              ✓ Simulation Complete
+            </div>
+            <div v-else-if="!stats" class="status-badge waiting">
+              ⏳ Waiting for fire placement
+            </div>
+            <div v-else class="status-badge running">
+              🔥 Fire spreading...
+            </div>
+          </div>
+
+          <!-- Fire Stats -->
+          <div class="stats-cards" v-if="stats">
+            <div class="stat-card burning">
+              <span class="stat-icon">🔥</span>
+              <div class="stat-info">
+                <span class="stat-value">{{ stats.burning }}</span>
+                <span class="stat-label">Cells Burning</span>
+              </div>
+            </div>
+            <div class="stat-card burnt">
+              <span class="stat-icon">⬛</span>
+              <div class="stat-info">
+                <span class="stat-value">{{ stats.burnt }}</span>
+                <span class="stat-label">Cells Burnt</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Progress Bar -->
+          <div class="progress-section">
+            <div class="progress-header">
+              <span class="progress-label">⏱️ Time Elapsed</span>
+              <span class="progress-value">{{ elapsedSimulatedHours.toFixed(1) }}h / {{ simulationDuration }}h</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" :style="{ width: `${(elapsedSimulatedHours / simulationDuration) * 100}%` }"></div>
             </div>
           </div>
         </div>
       </div>
 
-      <!-- Simulation Controls -->
-      <div class="control-section">
-        <div class="slider-header">
-          <label class="section-label">Duration</label>
-          <span class="slider-value">{{ elapsedSimulatedHours.toFixed(1) }} / {{ simulationDuration }}h</span>
+      <!-- Section 4: Emissions Charts -->
+      <div class="section-block charts-section">
+        <div class="section-header">
+          <span class="section-icon">📈</span>
+          <span class="section-title">Emissions Analysis</span>
         </div>
-        <div class="slider-container">
-          <input 
-            type="range" 
-            v-model.number="simulationDuration" 
-            min="1" 
-            max="24" 
-            step="1"
-            class="modern-slider"
-          />
-          <div class="slider-track-fill" :style="{ width: `${(simulationDuration / 24) * 100}%` }"></div>
-        </div>
-        <small class="note">2s real-time = 1h simulated</small>
-      </div>
 
-      <!-- Actions -->
-      <div class="actions-grid">
-        <button @click="togglePause" class="btn-action btn-primary" :disabled="isLoading || isFinished" :class="{ 'paused': isPaused }">
-          <span class="icon">{{ isPaused ? '▶' : '⏸' }}</span>
-          {{ isPaused ? 'Resume' : 'Pause' }}
-        </button>
-        <button @click="reset" class="btn-action btn-secondary">
-          <span class="icon">↺</span> Reset
-        </button>
-      </div>
-
-      <!-- Status & Stats -->
-      <div v-if="isLoading" class="status-badge loading">
-        <span class="spinner"></span> Loading terrain...
-      </div>
-      
-      <div v-if="isFinished" class="status-badge finished">
-        ✓ Simulation Complete
-      </div>
-
-      <div v-if="stats" class="stats-grid">
-        <div class="stat-card burning">
-          <span class="stat-label">Active Fires</span>
-          <span class="stat-value">{{ stats.burning }}</span>
-        </div>
-        <div class="stat-card burnt">
-          <span class="stat-label">Burnt Area</span>
-          <span class="stat-value">{{ stats.burnt }}</span>
-        </div>
-      </div>
-
-      <!-- Chart -->
-      <div class="chart-section">
-        <h4>Pollution Impact (Simulated)</h4>
-        <div class="chart-container">
-          <div v-if="pollutionHistory.length < 2" class="chart-placeholder">
-            <span>Waiting for data...</span>
+        <div class="charts-grid">
+          <!-- Simulated Pollution Chart -->
+          <div class="chart-card">
+            <div class="chart-header">
+              <span class="chart-title">Simulated Emissions</span>
+              <span class="chart-subtitle">From fire simulation</span>
+            </div>
+            <div class="chart-container">
+              <div v-if="pollutionHistory.length < 2" class="chart-placeholder">
+                <span class="placeholder-icon">📊</span>
+                <span class="placeholder-text">Waiting for simulation data...</span>
+              </div>
+              <svg v-else :viewBox="`0 0 ${chartWidthMini} ${chartHeightMini}`" class="chart-svg">
+                <polyline :points="simulatedPointsMini.co" fill="none" stroke="#8884d8" stroke-width="2"/>
+                <polyline :points="simulatedPointsMini.no2" fill="none" stroke="#82ca9d" stroke-width="2"/>
+                <polyline :points="simulatedPointsMini.pm2_5" fill="none" stroke="#ffc658" stroke-width="2"/>
+              </svg>
+            </div>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-dot" style="background:#8884d8"></span>CO</span>
+              <span class="legend-item"><span class="legend-dot" style="background:#82ca9d"></span>NO₂</span>
+              <span class="legend-item"><span class="legend-dot" style="background:#ffc658"></span>PM2.5</span>
+            </div>
           </div>
-          <svg v-else :viewBox="`0 0 ${fullWidth} ${fullHeight}`" class="chart-svg">
-            <defs>
-              <linearGradient id="gradCo2" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" style="stop-color:#ff4500;stop-opacity:0.2" />
-                <stop offset="100%" style="stop-color:#ff4500;stop-opacity:0" />
-              </linearGradient>
-            </defs>
-            
-            <g :transform="`translate(${chartPadding.left}, 0)`">
-              <!-- Grid lines -->
-              <line v-for="i in 5" :key="i" x1="0" :y1="chartHeight * i / 5" :x2="chartWidth" :y2="chartHeight * i / 5" stroke="#f0f0f0" stroke-width="1"/>
-              
-              <!-- CO Line -->
-              <polyline :points="simulatedPoints.co" fill="none" stroke="#8884d8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              
-              <!-- NO2 Line -->
-              <polyline :points="simulatedPoints.no2" fill="none" stroke="#82ca9d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
 
-              <!-- PM2.5 Line -->
-              <polyline :points="simulatedPoints.pm2_5" fill="none" stroke="#ffc658" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </g>
-          </svg>
-        </div>
-        <div class="chart-legend">
-          <span class="legend-item"><span class="dot" style="background: #8884d8"></span> CO</span>
-          <span class="legend-item"><span class="dot" style="background: #82ca9d"></span> NO2</span>
-          <span class="legend-item"><span class="dot" style="background: #ffc658"></span> PM2.5</span>
+          <!-- Real Pollution Chart -->
+          <div class="chart-card" v-if="realPollutionData.length > 0">
+            <div class="chart-header">
+              <span class="chart-title">Historical Data (24h)</span>
+              <span class="chart-badge" :class="isPollutionMock ? 'simulated' : 'live'">
+                {{ isPollutionMock ? 'SIMULATED' : 'LIVE' }}
+              </span>
+            </div>
+            <div class="chart-container">
+              <svg :viewBox="`0 0 ${chartWidthMini} ${chartHeightMini}`" class="chart-svg">
+                <polyline :points="realPollutionPointsMini.co" fill="none" stroke="#8884d8" stroke-width="2"/>
+                <polyline :points="realPollutionPointsMini.no2" fill="none" stroke="#82ca9d" stroke-width="2"/>
+                <polyline :points="realPollutionPointsMini.pm2_5" fill="none" stroke="#ffc658" stroke-width="2"/>
+              </svg>
+            </div>
+            <div class="chart-legend">
+              <span class="legend-item"><span class="legend-dot" style="background:#8884d8"></span>CO</span>
+              <span class="legend-item"><span class="legend-dot" style="background:#82ca9d"></span>NO₂</span>
+              <span class="legend-item"><span class="legend-dot" style="background:#ffc658"></span>PM2.5</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Real Pollution Chart -->
-      <div class="chart-section" v-if="realPollutionData.length > 0">
-        <div class="chart-header">
-          <h4>Historical Air Quality (24h)</h4>
-          <span class="chart-badge live" v-if="!isPollutionMock">LIVE</span>
-          <span class="chart-badge mock" v-if="isPollutionMock">SIMULATED</span>
-        </div>
-        <div class="chart-container">
-          <svg :viewBox="`0 0 ${fullWidth} ${fullHeight}`" class="chart-svg">
-            <g :transform="`translate(${chartPadding.left}, 0)`">
-              <!-- Grid lines -->
-              <line v-for="i in 5" :key="i" x1="0" :y1="chartHeight * i / 5" :x2="chartWidth" :y2="chartHeight * i / 5" stroke="#f0f0f0" stroke-width="1"/>
-              
-              <!-- CO Line -->
-              <polyline :points="realPollutionPoints.co" fill="none" stroke="#8884d8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-              
-              <!-- NO2 Line -->
-              <polyline :points="realPollutionPoints.no2" fill="none" stroke="#82ca9d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-
-              <!-- PM2.5 Line -->
-              <polyline :points="realPollutionPoints.pm2_5" fill="none" stroke="#ffc658" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-
-              <!-- X Axis Labels -->
-              <text v-for="label in timeLabels" :key="label.text" :x="label.x" :y="chartHeight + 15" font-size="10" fill="#666" text-anchor="middle">{{ label.text }}</text>
-            </g>
-            
-            <!-- Y Axis Labels (Approximate for CO as primary) -->
-            <text x="0" y="10" font-size="10" fill="#666">{{ Math.round(realPollutionPoints.maxCO) }}</text>
-            <text x="0" :y="chartHeight" font-size="10" fill="#666">0</text>
-          </svg>
-        </div>
-        <div class="chart-legend">
-          <span class="legend-item"><span class="dot" style="background: #8884d8"></span> CO</span>
-          <span class="legend-item"><span class="dot" style="background: #82ca9d"></span> NO2</span>
-          <span class="legend-item"><span class="dot" style="background: #ffc658"></span> PM2.5</span>
-        </div>
+      <!-- Click Instruction (only when no simulation running) -->
+      <div class="click-instruction" v-if="!stats">
+        <span class="instruction-icon">👆</span>
+        <span class="instruction-text">Click anywhere on the map to place a fire and start simulation</span>
       </div>
     </div>
   </div>
@@ -665,6 +621,39 @@ const timeLabels = computed(() => {
     text: label,
     x: (i / 4) * chartWidth
   }))
+})
+
+// Mini Chart dimensions for compact layout
+const chartWidthMini = 200
+const chartHeightMini = 60
+
+const scaleYMini = (val: number, max: number) => chartHeightMini - (val / (max || 1)) * chartHeightMini
+const scaleXMini = (i: number, total: number) => (i / (total - 1 || 1)) * chartWidthMini
+
+const simulatedPointsMini = computed(() => {
+  if (pollutionHistory.value.length < 2) return { co: '', no2: '', pm2_5: '' }
+  const data = pollutionHistory.value
+  const maxCO = Math.max(...data.map(d => d.co)) || 1
+  const maxNO2 = Math.max(...data.map(d => d.no2)) || 1
+  const maxPM25 = Math.max(...data.map(d => d.pm2_5)) || 1
+
+  const createPoints = (key: 'co' | 'no2' | 'pm2_5', max: number) => {
+    return data.map((d, i) => `${scaleXMini(i, data.length)},${scaleYMini(d[key], max)}`).join(' ')
+  }
+  return { co: createPoints('co', maxCO), no2: createPoints('no2', maxNO2), pm2_5: createPoints('pm2_5', maxPM25) }
+})
+
+const realPollutionPointsMini = computed(() => {
+  if (realPollutionData.value.length < 2) return { co: '', no2: '', pm2_5: '' }
+  const data = realPollutionData.value
+  const maxCO = Math.max(...data.map(d => d.components.co)) || 1
+  const maxNO2 = Math.max(...data.map(d => d.components.no2)) || 1
+  const maxPM25 = Math.max(...data.map(d => d.components.pm2_5)) || 1
+
+  const createPoints = (key: 'co' | 'no2' | 'pm2_5', max: number) => {
+    return data.map((d, i) => `${scaleXMini(i, data.length)},${scaleYMini(d.components[key], max)}`).join(' ')
+  }
+  return { co: createPoints('co', maxCO), no2: createPoints('no2', maxNO2), pm2_5: createPoints('pm2_5', maxPM25) }
 })
 
 
@@ -1438,490 +1427,465 @@ defineExpose({
   display: flex;
   flex-direction: column;
   height: 100%;
-  max-height: 100%;
 }
 
+/* Header - removed, keeping style for compatibility */
 .panel-header {
-  padding: 16px 20px;
+  padding: 12px 16px;
   background: linear-gradient(135deg, #ff4500 0%, #ff8c00 100%);
   color: white;
+  flex-shrink: 0;
 }
 
 .panel-header h3 {
   margin: 0;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 700;
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
 .description {
-  margin: 4px 0 0 0;
+  margin: 2px 0 0 0;
   font-size: 0.8rem;
   opacity: 0.9;
 }
 
+/* Main Content - Scrollable */
 .panel-content {
-  padding: 20px;
-  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  overflow-y: auto;
 }
 
-.control-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.section-label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #666;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-/* Custom Datepicker Override */
-:deep(.dp__input) {
-  border-radius: 8px;
-  border: 1px solid #e0e0e0;
-  padding: 10px 12px 10px 35px; /* Increased left padding for icon */
-  font-size: 0.9rem;
-  background: #f9f9f9;
-  transition: all 0.2s;
-}
-
-:deep(.dp__input:hover) {
-  border-color: #ff8c00;
-  background: #fff;
-}
-
-:deep(.dp__input:focus) {
-  border-color: #ff4500;
-  box-shadow: 0 0 0 3px rgba(255, 69, 0, 0.1);
-}
-
-/* Weather Card */
-.weather-card {
-  background: #f0f7ff;
+/* Section Blocks - More compact */
+.section-block {
+  background: #fafbfc;
+  border: 1px solid #e5e7eb;
   border-radius: 10px;
-  padding: 12px 16px;
-  border: 1px solid #e1effe;
+  padding: 12px;
+  flex-shrink: 0;
 }
 
-.weather-header {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #1e429f;
-  margin-bottom: 10px;
+.section-header {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.section-icon {
+  font-size: 1rem;
+}
+
+.section-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #1f2937;
+  flex: 1;
+}
+
+/* Badges */
+.live-badge, .mock-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
 }
 
 .live-badge {
-  margin-left: auto;
   background: #10b981;
   color: white;
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
-  animation: pulse 2s infinite;
 }
 
 .mock-badge {
-  margin-left: auto;
   background: #f59e0b;
   color: white;
-  font-size: 0.65rem;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
 }
 
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-.weather-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+/* Weather Controls */
+.weather-controls {
+  display: flex;
   gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
 }
 
-.weather-item {
+.control-group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
-.weather-item .label {
+.control-label {
   font-size: 0.75rem;
-  color: #6b7280;
-}
-
-.weather-item .value {
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: #111827;
-}
-
-.weather-item .unit {
-  font-size: 0.8rem;
-  font-weight: 400;
-  color: #6b7280;
-}
-
-.direction-value {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.wind-arrow-simple {
-  width: 42px;
-  height: 42px;
-  border: 2px solid #e5e7eb;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-  background: #ffffff;
-  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
-}
-
-.wind-arrow-head {
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-  border-bottom: 18px solid #1d4ed8;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.25));
-}
-
-.wind-explanation {
-  margin-top: 10px;
-  padding: 8px;
-  background: rgba(255, 140, 0, 0.1);
-  border-radius: 6px;
-  border-left: 3px solid #ff8c00;
-}
-
-.wind-explanation small {
-  font-size: 0.75rem;
-  color: #92400e;
-}
-
-/* Model Info Card */
-.model-info-card {
-  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
-  border-radius: 10px;
-  padding: 12px 16px;
-  border: 1px solid #bbf7d0;
-  margin-bottom: 10px;
-}
-
-.model-info-header {
-  font-size: 0.85rem;
   font-weight: 600;
-  color: #166534;
-  margin-bottom: 8px;
+  color: #4b5563;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Toggle Group */
+.toggle-group {
   display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.model-info-content {
-  font-size: 0.8rem;
-  color: #374151;
-}
-
-.model-info-content p {
-  margin: 0 0 8px 0;
-}
-
-.model-features {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.model-features li {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 0;
-  font-size: 0.75rem;
-}
-
-.feature-icon {
-  font-size: 0.9rem;
-}
-
-/* Modern Slider */
-.slider-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.slider-value {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: #ff4500;
-  background: rgba(255, 69, 0, 0.1);
-  padding: 2px 8px;
-  border-radius: 12px;
-}
-
-.slider-container {
-  position: relative;
-  height: 24px;
-  display: flex;
-  align-items: center;
-}
-
-.modern-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 6px;
   background: #e5e7eb;
-  border-radius: 3px;
-  outline: none;
-  z-index: 2;
-  position: relative;
-  background: transparent;
-}
-
-.slider-track-fill {
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 6px;
-  background: linear-gradient(90deg, #ff8c00, #ff4500);
-  border-radius: 3px;
-  z-index: 1;
-  pointer-events: none;
-}
-
-.modern-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
-  border: 2px solid #ff4500;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  transition: transform 0.1s;
-  margin-top: -6px; /* Adjust for track height */
-}
-
-.modern-slider::-webkit-slider-thumb:hover {
-  transform: scale(1.1);
-}
-
-.modern-slider::-webkit-slider-runnable-track {
-  width: 100%;
-  height: 6px;
-  cursor: pointer;
-  background: #e5e7eb;
-  border-radius: 3px;
-}
-
-.note {
-  font-size: 0.75rem;
-  color: #9ca3af;
-  font-style: italic;
-}
-
-/* Actions */
-.actions-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-
-.btn-action {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 10px;
-  border-radius: 8px;
-  font-weight: 600;
-  font-size: 0.9rem;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-primary {
-  background: #10b981;
-  color: white;
-  box-shadow: 0 2px 4px rgba(16, 185, 129, 0.2);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #059669;
-  transform: translateY(-1px);
-}
-
-.btn-primary.paused {
-  background: #3b82f6;
-  box-shadow: 0 2px 4px rgba(59, 130, 246, 0.2);
-}
-
-.btn-primary:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
-  transform: none;
-  box-shadow: none;
-}
-
-.btn-secondary {
-  background: #f3f4f6;
-  color: #374151;
-  border: 1px solid #e5e7eb;
-}
-
-.btn-secondary:hover {
-  background: #e5e7eb;
-}
-
-/* Status Badges */
-.status-badge {
-  padding: 8px 12px;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: center;
-}
-
-.status-badge.loading {
-  background: #fff7ed;
-  color: #c2410c;
-  border: 1px solid #ffedd5;
-}
-
-.status-badge.finished {
-  background: #ecfdf5;
-  color: #047857;
-  border: 1px solid #d1fae5;
-}
-
-/* View Toggle */
-.view-toggle {
-  display: flex;
-  background: #f3f4f6;
   padding: 4px;
   border-radius: 8px;
   gap: 4px;
 }
 
 .toggle-btn {
-  flex: 1;
-  padding: 6px 12px;
+  padding: 6px 10px;
   border: none;
   background: transparent;
-  border-radius: 6px;
+  border-radius: 5px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.toggle-btn.large {
+  padding: 8px 12px;
   font-size: 0.85rem;
+}
+
+.toggle-btn.active {
+  background: white;
+  color: #1f2937;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  font-weight: 600;
+}
+
+.toggle-btn:hover:not(.active) {
+  background: rgba(255,255,255,0.5);
+}
+
+/* Date Picker */
+:deep(.dp__input) {
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  padding: 10px 12px 10px 36px;
+  font-size: 0.95rem;
+  background: white;
+}
+
+/* Weather Display Grid */
+.weather-display-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  background: #f0f7ff;
+  border: 1px solid #e1effe;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.weather-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.weather-icon {
+  font-size: 1.2rem;
+}
+
+.weather-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.weather-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #111827;
+}
+
+.weather-label {
+  font-size: 0.65rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.2px;
+}
+
+/* Custom Weather Panel */
+.custom-weather-panel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  margin-top: 8px;
+}
+
+.custom-sliders-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.slider-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.slider-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.custom-slider {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: #e5e7eb;
+  outline: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.custom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.slider-value {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #1f2937;
+  min-width: 45px;
+  text-align: right;
+}
+
+.custom-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.month-select {
+  padding: 6px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  background: white;
+  cursor: pointer;
+}
+
+.btn-apply {
+  flex: 1;
+  padding: 8px 14px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.btn-apply:hover {
+  background: #2563eb;
+}
+
+/* Simulation Controls Grid */
+.sim-controls-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* Pollutant Buttons */
+.pollutant-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pollutant-btn {
+  padding: 6px 12px;
+  border: 1px solid #e5e7eb;
+  background: white;
+  border-radius: 6px;
+  font-size: 0.8rem;
   font-weight: 500;
   color: #6b7280;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.toggle-btn.active {
-  background: white;
-  color: #1f2937;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-  font-weight: 600;
+.pollutant-btn.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
 }
 
-.toggle-btn:hover:not(.active) {
-  color: #374151;
-  background: rgba(255,255,255,0.5);
+.pollutant-btn:hover:not(.active) {
+  border-color: #3b82f6;
+  color: #3b82f6;
 }
 
-/* Pollutant Selector */
-.pollutant-selector {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid #f3f4f6;
+/* Duration Control */
+.duration-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
-.pill-group {
+.duration-slider {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #ff8c00, #ff4500);
+  outline: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+.duration-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid #ff4500;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.duration-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #ff4500;
+  min-width: 65px;
+}
+
+/* Action Buttons */
+.action-buttons {
   display: flex;
   gap: 8px;
-  margin-bottom: 6px;
 }
 
-.pill-btn {
-  flex: 1;
-  padding: 4px 8px;
-  border: 1px solid #e5e7eb;
-  background: white;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  color: #6b7280;
+.btn-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.85rem;
+  border: none;
   cursor: pointer;
   transition: all 0.2s;
 }
 
-.pill-btn.active {
-  background: #3b82f6;
+.btn-action .btn-icon {
+  font-size: 1rem;
+}
+
+.btn-action.btn-primary {
+  flex: 1;
+  background: #10b981;
   color: white;
-  border-color: #3b82f6;
-  box-shadow: 0 2px 4px rgba(59, 130,246, 0.3);
 }
 
-.pill-btn:hover:not(.active) {
-  border-color: #d1d5db;
-  background: #f9fafb;
+.btn-action.btn-primary:hover:not(:disabled) {
+  background: #059669;
 }
 
-.legend-box {
-  margin-top: 12px;
-  background: #f9fafb;
-  padding: 8px;
-  border-radius: 6px;
-  border: 1px solid #f3f4f6;
+.btn-action.btn-primary.paused {
+  background: #3b82f6;
 }
 
-.legend-title {
-  font-size: 0.7rem;
-  font-weight: 600;
-  color: #4b5563;
-  margin-bottom: 4px;
+.btn-action.btn-primary:disabled {
+  background: #9ca3af;
+  cursor: not-allowed;
 }
 
-.legend-bar {
-  height: 10px;
-  border-radius: 5px;
-  width: 100%;
-  margin-bottom: 4px;
-  border: 1px solid rgba(0,0,0,0.05);
+.btn-action.btn-secondary {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #e5e7eb;
+  padding: 10px 14px;
 }
 
-.legend-labels {
+.btn-action.btn-secondary:hover {
+  background: #e5e7eb;
+}
+
+/* Status Section */
+.status-section {
+  flex: 0;
+}
+
+.status-grid {
   display: flex;
-  justify-content: space-between;
-  font-size: 0.65rem;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.status-item {
+  display: flex;
+  justify-content: center;
+}
+
+.status-badge {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-badge.loading {
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.status-badge.finished {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.status-badge.waiting {
+  background: #f3f4f6;
   color: #6b7280;
+}
+
+.status-badge.running {
+  background: #fef3c7;
+  color: #b45309;
 }
 
 .spinner {
@@ -1937,29 +1901,25 @@ defineExpose({
   to { transform: rotate(360deg); }
 }
 
-/* Stats Grid */
-.stats-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
+/* Stats Cards */
+.stats-cards {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
 }
 
 .stat-card {
-  padding: 12px;
-  border-radius: 8px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  min-width: 100px;
 }
 
 .stat-card.burning {
-  background: #fff1f2;
-  border: 1px solid #ffe4e6;
-}
-
-.stat-card.burning .stat-value {
-  color: #e11d48;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
 }
 
 .stat-card.burnt {
@@ -1967,253 +1927,206 @@ defineExpose({
   border: 1px solid #e5e7eb;
 }
 
-.stat-card.burnt .stat-value {
-  color: #374151;
+.stat-card .stat-icon {
+  font-size: 1.1rem;
 }
 
-.stat-label {
-  font-size: 0.75rem;
-  color: #6b7280;
-  text-transform: uppercase;
-  margin-bottom: 4px;
+.stat-info {
+  display: flex;
+  flex-direction: column;
 }
 
 .stat-value {
-  font-size: 1.25rem;
+  font-size: 1rem;
   font-weight: 700;
+  color: #111827;
 }
 
-/* Chart */
-.chart-section {
+.stat-label {
+  font-size: 0.65rem;
+  color: #6b7280;
+  text-transform: uppercase;
+}
+
+/* Progress Section */
+.progress-section {
   background: white;
   border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 16px;
+  border-radius: 6px;
+  padding: 8px 12px;
+}
+
+.progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.progress-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #4b5563;
+}
+
+.progress-value {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #ff4500;
+}
+
+.progress-bar {
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff8c00, #ff4500);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+/* Charts Section */
+.charts-section {
+  flex: 0;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+
+.chart-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
 }
 
 .chart-header {
   display: flex;
-  align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
+  align-items: center;
+  margin-bottom: 6px;
 }
 
-.chart-section h4 {
-  margin: 0;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #374151;
+.chart-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.chart-subtitle {
+  font-size: 0.65rem;
+  color: #6b7280;
+  margin-left: 4px;
 }
 
 .chart-badge {
-  font-size: 0.65rem;
+  font-size: 0.55rem;
   font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 4px;
+  padding: 2px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
 }
 
 .chart-badge.live {
   background: #10b981;
   color: white;
-  animation: pulse 2s infinite;
 }
 
-.chart-badge.mock {
+.chart-badge.simulated {
   background: #f59e0b;
   color: white;
 }
 
 .chart-container {
-  position: relative;
-  height: 100px;
-  margin-bottom: 8px;
+  flex: 1;
+  min-height: 50px;
+  max-height: 60px;
+  margin-bottom: 6px;
 }
 
 .chart-placeholder {
   height: 100%;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   background: #f9fafb;
   border-radius: 6px;
+  gap: 4px;
+}
+
+.placeholder-icon {
+  font-size: 1rem;
+  opacity: 0.5;
+}
+
+.placeholder-text {
+  font-size: 0.7rem;
   color: #9ca3af;
-  font-size: 0.85rem;
 }
 
 .chart-svg {
   width: 100%;
   height: 100%;
-  overflow: visible;
 }
 
 .chart-legend {
   display: flex;
   justify-content: center;
-  gap: 16px;
-  font-size: 0.8rem;
-  color: #4b5563;
+  gap: 10px;
+  padding-top: 4px;
+  border-top: 1px solid #f3f4f6;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+  font-size: 0.7rem;
+  font-weight: 500;
+  color: #4b5563;
 }
 
-.dot {
+.legend-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
 
-.dot.co2 { background: #ff4500; }
-.dot.ch4 { background: #1e90ff; }
-
-/* Custom Weather Section */
-.custom-weather-section {
-  background: #f8fafc;
+/* Click Instruction */
+.click-instruction {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
   border-radius: 8px;
-  padding: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px dashed #7dd3fc;
 }
 
-.custom-param {
-  margin-bottom: 16px;
+.instruction-icon {
+  font-size: 1.1rem;
 }
 
-.param-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.85rem;
-  color: #374151;
-  margin-bottom: 8px;
-  font-weight: 500;
-}
-
-.param-slider {
-  width: 100%;
-  height: 6px;
-  border-radius: 3px;
-  background: #e5e7eb;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-  cursor: pointer;
-}
-
-.param-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #3b82f6;
-  cursor: pointer;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
-  transition: all 0.2s ease;
-}
-
-.param-slider::-webkit-slider-thumb:hover {
-  background: #2563eb;
-  transform: scale(1.1);
-}
-
-.param-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #3b82f6;
-  cursor: pointer;
-  border: none;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.15);
-  transition: all 0.2s ease;
-}
-
-.param-slider::-moz-range-thumb:hover {
-  background: #2563eb;
-  transform: scale(1.1);
-}
-
-.param-hint {
-  font-size: 0.7rem;
-  color: #9ca3af;
-  margin-top: 4px;
-}
-
-.wind-compass {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  margin-top: 8px;
-}
-
-.compass-arrow {
-  width: 48px;
-  height: 48px;
-  border: 2px solid #e5e7eb;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-  background: white;
-  transition: transform 0.3s ease;
-}
-
-.compass-label {
-  font-size: 0.7rem;
-  color: #6b7280;
-  font-weight: 600;
-}
-
-.season-select {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  background: white;
-  font-size: 0.85rem;
-  color: #374151;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.season-select:hover {
-  border-color: #3b82f6;
-}
-
-.season-select:focus {
-  outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-}
-
-.btn-apply-custom {
-  width: 100%;
-  padding: 10px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  color: white;
-  border: none;
-  border-radius: 6px;
+.instruction-text {
   font-size: 0.85rem;
   font-weight: 600;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  transition: all 0.2s ease;
-  margin-top: 16px;
+  color: #0369a1;
 }
 
-.btn-apply-custom:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
-}
-
-.btn-apply-custom:active {
-  transform: translateY(0);
+/* Animation */
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
 }
 </style>
