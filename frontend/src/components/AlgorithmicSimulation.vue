@@ -19,36 +19,36 @@
           <!-- Weather Source Toggle -->
           <div class="control-group">
             <label class="control-label">Data Source</label>
-            <div class="toggle-group">
-              <button 
-                class="toggle-btn large" 
-                :class="{ active: weatherMode === 'real' }"
-                @click="switchWeatherMode('real')"
-              >
-                📅 Real Weather
-              </button>
-              <button 
-                class="toggle-btn large" 
-                :class="{ active: weatherMode === 'custom' }"
-                @click="switchWeatherMode('custom')"
-              >
-                ⚙️ Custom Weather
-              </button>
+            <div class="weather-source-row">
+              <div class="toggle-group">
+                <button 
+                  class="toggle-btn large" 
+                  :class="{ active: weatherMode === 'real' }"
+                  @click="switchWeatherMode('real')"
+                >
+                  📅 Real Weather
+                </button>
+                <button 
+                  class="toggle-btn large" 
+                  :class="{ active: weatherMode === 'custom' }"
+                  @click="switchWeatherMode('custom')"
+                >
+                  ⚙️ Custom Weather
+                </button>
+              </div>
+              <!-- Date Picker (Real Mode) - inline -->
+              <div v-if="weatherMode === 'real'" class="date-picker-inline">
+                <VueDatePicker 
+                  v-model="selectedDate" 
+                  :enable-time-picker="false"
+                  auto-apply
+                  :format="'yyyy-MM-dd'"
+                  model-type="yyyy-MM-dd"
+                  @update:model-value="() => fetchWeather()"
+                  class="custom-datepicker"
+                />
+              </div>
             </div>
-          </div>
-
-          <!-- Date Picker (Real Mode) -->
-          <div v-if="weatherMode === 'real'" class="control-group">
-            <label class="control-label">Select Date</label>
-            <VueDatePicker 
-              v-model="selectedDate" 
-              :enable-time-picker="false"
-              auto-apply
-              :format="'yyyy-MM-dd'"
-              model-type="yyyy-MM-dd"
-              @update:model-value="() => fetchWeather()"
-              class="custom-datepicker"
-            />
           </div>
         </div>
 
@@ -187,23 +187,6 @@
             </div>
           </div>
         </div>
-
-        <!-- Action Buttons -->
-        <div class="action-buttons">
-          <button 
-            @click="togglePause" 
-            class="btn-action btn-primary" 
-            :disabled="isLoading || isFinished" 
-            :class="{ 'paused': isPaused }"
-          >
-            <span class="btn-icon">{{ isPaused ? '▶' : '⏸' }}</span>
-            <span class="btn-text">{{ isPaused ? 'Resume Simulation' : 'Pause Simulation' }}</span>
-          </button>
-          <button @click="reset" class="btn-action btn-secondary">
-            <span class="btn-icon">↺</span>
-            <span class="btn-text">Reset</span>
-          </button>
-        </div>
       </div>
 
       <!-- Section 3: Live Status -->
@@ -233,22 +216,39 @@
             </div>
           </div>
 
-          <!-- Fire Stats -->
+          <!-- Fire Stats + Action Buttons -->
           <div class="stats-cards" v-if="stats">
             <div class="stat-card burning">
               <span class="stat-icon">🔥</span>
               <div class="stat-info">
                 <span class="stat-value">{{ stats.burning }}</span>
-                <span class="stat-label">Cells Burning</span>
+                <span class="stat-label">Burning</span>
               </div>
             </div>
             <div class="stat-card burnt">
               <span class="stat-icon">⬛</span>
               <div class="stat-info">
                 <span class="stat-value">{{ stats.burnt }}</span>
-                <span class="stat-label">Cells Burnt</span>
+                <span class="stat-label">Burnt</span>
               </div>
             </div>
+            <button 
+              @click="togglePause" 
+              class="stat-card action-card" 
+              :class="{ 'paused': isPaused }"
+              :disabled="isLoading || isFinished"
+            >
+              <span class="stat-icon">{{ isPaused ? '▶' : '⏸' }}</span>
+              <div class="stat-info">
+                <span class="stat-label">{{ isPaused ? 'Resume' : 'Pause' }}</span>
+              </div>
+            </button>
+            <button @click="reset" class="stat-card action-card reset-card">
+              <span class="stat-icon">↺</span>
+              <div class="stat-info">
+                <span class="stat-label">Reset</span>
+              </div>
+            </button>
           </div>
 
           <!-- Progress Bar -->
@@ -279,7 +279,7 @@
           <div class="chart-card">
             <div class="chart-header">
               <span class="chart-title">Simulated Emissions</span>
-              <span class="chart-subtitle">From fire simulation</span>
+              <button class="chart-expand-btn" @click="openExpandedChart('simulated')" title="Expand chart">⛶</button>
             </div>
             <div class="chart-container">
               <div v-if="pollutionHistory.length < 2" class="chart-placeholder">
@@ -306,6 +306,7 @@
               <span class="chart-badge" :class="isPollutionMock ? 'simulated' : 'live'">
                 {{ isPollutionMock ? 'SIMULATED' : 'LIVE' }}
               </span>
+              <button class="chart-expand-btn" @click="openExpandedChart('historical')" title="Expand chart">⛶</button>
             </div>
             <div class="chart-container">
               <svg :viewBox="`0 0 ${chartWidthMini} ${chartHeightMini}`" class="chart-svg">
@@ -338,6 +339,45 @@
         :style="{ top: tooltipPosition.y + 'px', left: tooltipPosition.x + 'px' }"
       >
         <div v-html="tooltipTexts[activeTooltip]"></div>
+      </div>
+    </Teleport>
+
+    <!-- Expanded Chart Modal -->
+    <Teleport to="body">
+      <div v-if="expandedChart" class="chart-modal-overlay" @click="closeExpandedChart">
+        <div class="chart-modal" @click.stop>
+          <div class="chart-modal-header">
+            <h3>{{ expandedChart === 'simulated' ? 'Simulated Emissions' : 'Historical Pollution Data (24h)' }}</h3>
+            <button class="close-modal-btn" @click="closeExpandedChart">×</button>
+          </div>
+          <div class="chart-modal-body">
+            <!-- Simulated Chart Expanded -->
+            <div v-if="expandedChart === 'simulated'" class="expanded-chart-container">
+              <div v-if="pollutionHistory.length < 2" class="chart-placeholder">
+                <span class="placeholder-icon">📊</span>
+                <span class="placeholder-text">Waiting for simulation data...</span>
+              </div>
+              <svg v-else :viewBox="`0 0 ${chartWidthExpanded} ${chartHeightExpanded}`" class="chart-svg-expanded">
+                <polyline :points="simulatedPointsExpanded.co" fill="none" stroke="#8884d8" stroke-width="3"/>
+                <polyline :points="simulatedPointsExpanded.no2" fill="none" stroke="#82ca9d" stroke-width="3"/>
+                <polyline :points="simulatedPointsExpanded.pm2_5" fill="none" stroke="#ffc658" stroke-width="3"/>
+              </svg>
+            </div>
+            <!-- Historical Chart Expanded -->
+            <div v-if="expandedChart === 'historical'" class="expanded-chart-container">
+              <svg :viewBox="`0 0 ${chartWidthExpanded} ${chartHeightExpanded}`" class="chart-svg-expanded">
+                <polyline :points="realPollutionPointsExpanded.co" fill="none" stroke="#8884d8" stroke-width="3"/>
+                <polyline :points="realPollutionPointsExpanded.no2" fill="none" stroke="#82ca9d" stroke-width="3"/>
+                <polyline :points="realPollutionPointsExpanded.pm2_5" fill="none" stroke="#ffc658" stroke-width="3"/>
+              </svg>
+            </div>
+          </div>
+          <div class="chart-modal-legend">
+            <span class="legend-item-lg"><span class="legend-dot-lg" style="background:#8884d8"></span>CO (Carbon Monoxide)</span>
+            <span class="legend-item-lg"><span class="legend-dot-lg" style="background:#82ca9d"></span>NO₂ (Nitrogen Dioxide)</span>
+            <span class="legend-item-lg"><span class="legend-dot-lg" style="background:#ffc658"></span>PM2.5 (Particulate Matter)</span>
+          </div>
+        </div>
       </div>
     </Teleport>
   </div>
@@ -375,6 +415,19 @@ const showTooltip = (event: MouseEvent, key: string) => {
 
 const hideTooltip = () => {
   activeTooltip.value = null
+}
+
+// Expanded chart modal state
+const expandedChart = ref<'simulated' | 'historical' | null>(null)
+const chartWidthExpanded = 600
+const chartHeightExpanded = 300
+
+const openExpandedChart = (chart: 'simulated' | 'historical') => {
+  expandedChart.value = chart
+}
+
+const closeExpandedChart = () => {
+  expandedChart.value = null
 }
 
 // Simulation Constants
@@ -698,6 +751,36 @@ const realPollutionPointsMini = computed(() => {
 
   const createPoints = (key: 'co' | 'no2' | 'pm2_5', max: number) => {
     return data.map((d, i) => `${scaleXMini(i, data.length)},${scaleYMini(d.components[key], max)}`).join(' ')
+  }
+  return { co: createPoints('co', maxCO), no2: createPoints('no2', maxNO2), pm2_5: createPoints('pm2_5', maxPM25) }
+})
+
+// Expanded chart scaling
+const scaleYExpanded = (val: number, max: number) => chartHeightExpanded - (val / (max || 1)) * chartHeightExpanded
+const scaleXExpanded = (i: number, total: number) => (i / (total - 1 || 1)) * chartWidthExpanded
+
+const simulatedPointsExpanded = computed(() => {
+  if (pollutionHistory.value.length < 2) return { co: '', no2: '', pm2_5: '' }
+  const data = pollutionHistory.value
+  const maxCO = Math.max(...data.map(d => d.co)) || 1
+  const maxNO2 = Math.max(...data.map(d => d.no2)) || 1
+  const maxPM25 = Math.max(...data.map(d => d.pm2_5)) || 1
+
+  const createPoints = (key: 'co' | 'no2' | 'pm2_5', max: number) => {
+    return data.map((d, i) => `${scaleXExpanded(i, data.length)},${scaleYExpanded(d[key], max)}`).join(' ')
+  }
+  return { co: createPoints('co', maxCO), no2: createPoints('no2', maxNO2), pm2_5: createPoints('pm2_5', maxPM25) }
+})
+
+const realPollutionPointsExpanded = computed(() => {
+  if (realPollutionData.value.length < 2) return { co: '', no2: '', pm2_5: '' }
+  const data = realPollutionData.value
+  const maxCO = Math.max(...data.map(d => d.components.co)) || 1
+  const maxNO2 = Math.max(...data.map(d => d.components.no2)) || 1
+  const maxPM25 = Math.max(...data.map(d => d.components.pm2_5)) || 1
+
+  const createPoints = (key: 'co' | 'no2' | 'pm2_5', max: number) => {
+    return data.map((d, i) => `${scaleXExpanded(i, data.length)},${scaleYExpanded(d.components[key], max)}`).join(' ')
   }
   return { co: createPoints('co', maxCO), no2: createPoints('no2', maxNO2), pm2_5: createPoints('pm2_5', maxPM25) }
 })
@@ -1598,6 +1681,23 @@ defineExpose({
   letter-spacing: 0.3px;
 }
 
+/* Weather Source Row - inline toggle + date picker */
+.weather-source-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.date-picker-inline {
+  min-width: 140px;
+}
+
+.date-picker-inline :deep(.dp__input) {
+  padding: 6px 8px 6px 32px;
+  font-size: 0.8rem;
+}
+
 /* Toggle Group */
 .toggle-group {
   display: flex;
@@ -1969,17 +2069,19 @@ defineExpose({
 /* Stats Cards */
 .stats-cards {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   justify-content: center;
+  flex-wrap: wrap;
 }
 
 .stat-card {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 6px;
+  padding: 8px 12px;
   border-radius: 8px;
-  min-width: 100px;
+  min-width: 80px;
+  border: 1px solid #e5e7eb;
 }
 
 .stat-card.burning {
@@ -1992,8 +2094,46 @@ defineExpose({
   border: 1px solid #e5e7eb;
 }
 
+/* Action cards (pause/reset buttons styled as stat cards) */
+.stat-card.action-card {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.stat-card.action-card:hover:not(:disabled) {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.stat-card.action-card.paused {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.stat-card.action-card.paused:hover {
+  background: #dbeafe;
+}
+
+.stat-card.action-card:disabled {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.stat-card.action-card.reset-card {
+  background: #fef3c7;
+  border-color: #fde68a;
+}
+
+.stat-card.action-card.reset-card:hover {
+  background: #fde68a;
+}
+
 .stat-card .stat-icon {
-  font-size: 1.1rem;
+  font-size: 1rem;
 }
 
 .stat-info {
@@ -2189,6 +2329,23 @@ defineExpose({
   color: #0369a1;
 }
 
+/* Chart Expand Button */
+.chart-expand-btn {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 2px 6px;
+  color: #6b7280;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.chart-expand-btn:hover {
+  background: #f3f4f6;
+  color: #1f2937;
+}
+
 /* Animation */
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -2218,5 +2375,108 @@ defineExpose({
 .global-tooltip strong {
   color: #60a5fa;
   font-weight: 600;
+}
+
+/* Chart Modal Styles */
+.chart-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+  backdrop-filter: blur(2px);
+}
+
+.chart-modal {
+  background: white;
+  border-radius: 12px;
+  padding: 0;
+  min-width: 650px;
+  max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.chart-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8fafc, #f1f5f9);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.chart-modal-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.close-modal-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 4px 8px;
+  line-height: 1;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.close-modal-btn:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.chart-modal-body {
+  padding: 24px;
+}
+
+.expanded-chart-container {
+  width: 100%;
+  height: 320px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart-svg-expanded {
+  width: 100%;
+  height: 100%;
+  max-width: 600px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.chart-modal-legend {
+  display: flex;
+  justify-content: center;
+  gap: 24px;
+  padding: 16px 20px;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.legend-item-lg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.legend-dot-lg {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
 }
 </style>

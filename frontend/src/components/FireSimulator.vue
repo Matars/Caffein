@@ -797,8 +797,8 @@ watch(frp, async () => {
 
 /* Wide mode for Algorithmic Simulation - no scrolling needed */
 .controls.controls-wide {
-  width: 580px;
-  min-width: 580px;
+  width: 680px;
+  min-width: 680px;
   overflow-y: hidden;
 }
 
