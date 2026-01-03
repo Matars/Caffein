@@ -780,7 +780,7 @@ watch(frp, async () => {
 <style scoped>
 .fire-simulator {
   display: flex;
-  height: calc(100vh - 60px);
+  height: 100vh;
   gap: 20px;
 }
 
@@ -797,8 +797,8 @@ watch(frp, async () => {
 
 /* Wide mode for Algorithmic Simulation - no scrolling needed */
 .controls.controls-wide {
-  width: 680px;
-  min-width: 680px;
+  width: 740px;
+  min-width: 740px;
   overflow-y: hidden;
 }
 

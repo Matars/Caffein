@@ -82,6 +82,25 @@
               <span class="weather-label">Fire Risk</span>
             </div>
           </div>
+          <!-- Wind Direction Compass -->
+          <div class="wind-compass-stat">
+            <div class="compass-container">
+              <div class="compass-ring">
+                <span class="compass-label n">N</span>
+                <span class="compass-label e">E</span>
+                <span class="compass-label s">S</span>
+                <span class="compass-label w">W</span>
+                <div class="compass-arrow" :style="{ transform: `rotate(${windDirection}deg)` }">
+                  <div class="arrow-tail"></div>
+                  <div class="arrow-head"></div>
+                </div>
+              </div>
+            </div>
+            <div class="compass-info">
+              <span class="compass-value">{{ getWindDirectionLabel(windDirection) }}</span>
+              <span class="compass-degrees">{{ windDirection }}°</span>
+            </div>
+          </div>
         </div>
 
         <!-- Custom Weather Sliders (Custom Mode) -->
@@ -1700,11 +1719,12 @@ defineExpose({
 
 /* Toggle Group */
 .toggle-group {
-  display: flex;
+  display: inline-flex;
   background: #e5e7eb;
   padding: 4px;
   border-radius: 8px;
   gap: 4px;
+  width: fit-content;
 }
 
 .toggle-btn {
@@ -1748,7 +1768,7 @@ defineExpose({
 /* Weather Display Grid */
 .weather-display-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 8px;
   background: #f0f7ff;
   border: 1px solid #e1effe;
@@ -1782,6 +1802,90 @@ defineExpose({
   color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 0.2px;
+}
+
+/* Wind Compass */
+.wind-compass-stat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compass-container {
+  flex-shrink: 0;
+}
+
+.compass-ring {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border: 2px solid #cbd5e1;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffffff, #f1f5f9);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.compass-label {
+  position: absolute;
+  font-size: 0.5rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.compass-label.n { top: 1px; left: 50%; transform: translateX(-50%); color: #dc2626; }
+.compass-label.s { bottom: 1px; left: 50%; transform: translateX(-50%); }
+.compass-label.e { right: 2px; top: 50%; transform: translateY(-50%); }
+.compass-label.w { left: 2px; top: 50%; transform: translateY(-50%); }
+
+.compass-arrow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 4px;
+  height: 28px;
+  margin-left: -2px;
+  margin-top: -14px;
+  transition: transform 0.3s ease;
+}
+
+.arrow-tail {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 12px;
+  background: #94a3b8;
+  border-radius: 2px 2px 0 0;
+}
+
+.arrow-head {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 10px solid #dc2626;
+}
+
+.compass-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.compass-value {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #1e40af;
+}
+
+.compass-degrees {
+  font-size: 0.6rem;
+  color: #6b7280;
 }
 
 /* Custom Weather Panel */
