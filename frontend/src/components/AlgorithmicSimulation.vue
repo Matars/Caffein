@@ -8,6 +8,9 @@
         <div class="section-header">
           <span class="section-icon">🌤️</span>
           <span class="section-title">Weather Configuration</span>
+          <div class="info-tooltip" @mouseenter="showTooltip($event, 'weather')" @mouseleave="hideTooltip">
+            <span class="info-icon">ⓘ</span>
+          </div>
           <span class="live-badge" v-if="selectedLocation && !isMockData">LIVE DATA</span>
           <span class="mock-badge" v-if="isMockData && selectedLocation">SIMULATED</span>
         </div>
@@ -140,6 +143,9 @@
         <div class="section-header">
           <span class="section-icon">🎮</span>
           <span class="section-title">Simulation Controls</span>
+          <div class="info-tooltip" @mouseenter="showTooltip($event, 'controls')" @mouseleave="hideTooltip">
+            <span class="info-icon">ⓘ</span>
+          </div>
         </div>
 
         <div class="sim-controls-grid">
@@ -205,6 +211,9 @@
         <div class="section-header">
           <span class="section-icon">📊</span>
           <span class="section-title">Simulation Status</span>
+          <div class="info-tooltip" @mouseenter="showTooltip($event, 'status')" @mouseleave="hideTooltip">
+            <span class="info-icon">ⓘ</span>
+          </div>
         </div>
 
         <div class="status-grid">
@@ -260,6 +269,9 @@
         <div class="section-header">
           <span class="section-icon">📈</span>
           <span class="section-title">Emissions Analysis</span>
+          <div class="info-tooltip" @mouseenter="showTooltip($event, 'emissions')" @mouseleave="hideTooltip">
+            <span class="info-icon">ⓘ</span>
+          </div>
         </div>
 
         <div class="charts-grid">
@@ -317,6 +329,17 @@
         <span class="instruction-text">Click anywhere on the map to place a fire and start simulation</span>
       </div>
     </div>
+
+    <!-- Global Tooltip (rendered outside overflow containers) -->
+    <Teleport to="body">
+      <div 
+        v-if="activeTooltip" 
+        class="global-tooltip"
+        :style="{ top: tooltipPosition.y + 'px', left: tooltipPosition.x + 'px' }"
+      >
+        <div v-html="tooltipTexts[activeTooltip]"></div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -330,6 +353,29 @@ import '@vuepic/vue-datepicker/dist/main.css'
 const props = defineProps<{
   map: L.Map | null
 }>()
+
+// Tooltip state
+const activeTooltip = ref<string | null>(null)
+const tooltipPosition = ref({ x: 0, y: 0 })
+const tooltipTexts: Record<string, string> = {
+  weather: `<strong>Real Weather:</strong> Fetches real historical daily weather data. Use this to simulate a fire on a historical date.<br><br><strong>Custom Weather:</strong> Create your own weather scenario with custom temperature, wind, and rainfall settings.`,
+  controls: `<strong>Fire Spread:</strong> View how the fire spreads on the map and how areas get burnt.<br><br><strong>Pollution:</strong> See how pollutants like CO, NO₂, and PM2.5 spread as a result of the fire.<br><br><strong>Duration:</strong> Select how long the fire simulation will last (1-24 hours).`,
+  status: `Track the simulation progress: see how many cells are actively burning, how many have been burnt, and how much time has elapsed in the simulation.`,
+  emissions: `Compare pollution levels: see how CO, NO₂, and PM2.5 emissions spike during fires versus historical baseline data.`
+}
+
+const showTooltip = (event: MouseEvent, key: string) => {
+  const rect = (event.target as HTMLElement).getBoundingClientRect()
+  tooltipPosition.value = {
+    x: rect.right + 10,
+    y: rect.top
+  }
+  activeTooltip.value = key
+}
+
+const hideTooltip = () => {
+  activeTooltip.value = null
+}
 
 // Simulation Constants
 const GRID_SIZE = 150 // Increased from 100 to 150 for larger area (approx 4.5km x 4.5km)
@@ -1491,6 +1537,25 @@ defineExpose({
   flex: 1;
 }
 
+/* Info Tooltip */
+.info-tooltip {
+  position: static;
+  display: inline-flex;
+  align-items: center;
+}
+
+.info-icon {
+  font-size: 0.85rem;
+  color: #9ca3af;
+  cursor: help;
+  transition: color 0.2s;
+  user-select: none;
+}
+
+.info-icon:hover {
+  color: #3b82f6;
+}
+
 /* Badges */
 .live-badge, .mock-badge {
   font-size: 0.6rem;
@@ -2128,5 +2193,30 @@ defineExpose({
 @keyframes pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.6; }
+}
+</style>
+
+<!-- Global tooltip styles (not scoped) -->
+<style>
+.global-tooltip {
+  position: fixed;
+  background: #1f2937;
+  color: white;
+  padding: 12px 14px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  max-width: 280px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  z-index: 99999;
+  text-align: left;
+  font-weight: 400;
+  pointer-events: none;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.global-tooltip strong {
+  color: #60a5fa;
+  font-weight: 600;
 }
 </style>
